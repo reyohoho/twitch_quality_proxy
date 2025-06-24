@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ReYohohoTwitch Proxy
+// @name         ReYohoho Twitch Proxy
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      3.1
 // @description  Redirect Twitch usher requests to proxy. Поддержать: https://t.me/send?start=IV7outCFI5B0 или USDT TRON TRC20: TYH7kvPryhSCFWjdRVw68VZ1advYaZw3yJ
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
