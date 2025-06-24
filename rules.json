@@ -1,0 +1,31 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "regexSubstitution": "https://proxy4.rhhhhhhh.live/\\0"
+      }
+    },
+    "condition": {
+      "initiatorDomains": ["twitch.tv"],
+      "regexFilter": "^https://usher\\.ttvnw\\.net/.*",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "other"
+      ]
+    }
+  }
+] 
