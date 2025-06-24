@@ -1,0 +1,22 @@
+{
+  "manifest_version": 2,
+  "name": "ReYohoho Twitch Proxy",
+  "version": "1.0",
+  "description": "Proxies Twitch usher requests to a custom proxy.",
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "https://usher.ttvnw.net/*",
+    "https://*.twitch.tv/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "applications": {
+    "gecko": {
+      "id": "reyohoho-twitch-proxy@rhhhhhhh.live",
+      "strict_min_version": "58.0"
+    }
+  }
+} 
