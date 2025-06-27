@@ -24,5 +24,5 @@ Firefox версия ещё на проверке
    
 
 > Поддержать: https://t.me/send?start=IV7outCFI5B0
->  USDT TRON – TRC20:
+> USDT TRON – TRC20:
 > TYH7kvPryhSCFWjdRVw68VZ1advYaZw3yJ
