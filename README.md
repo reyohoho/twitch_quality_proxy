@@ -1,5 +1,5 @@
 
-# twitch_quality_proxy
+# ReYohoho Twitch Proxy
 Версия для chromium(предпочтительный вариант для Яндекс браузера) доступна в [магазине](https://chromewebstore.google.com/detail/reyohoho-twitch-proxy/ohgphcndclpcmbglhldmnagagdbmkoef?authuser=0&hl=ru)
 
 Firefox версия ещё на проверке
