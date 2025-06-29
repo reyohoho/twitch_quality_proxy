@@ -3,7 +3,7 @@
 - Версия для chromium(предпочтительный вариант для Хрома/Яндекс браузера/Оперы и тп) доступна в [магазине](https://chromewebstore.google.com/detail/reyohoho-twitch-proxy/ohgphcndclpcmbglhldmnagagdbmkoef?authuser=0&hl=ru)
 - [Альтернативный вариант(ошибка 2000)](https://chromewebstore.google.com/detail/twitch-enhanced-viewer/pnhhdhhcadcjfckjhpmjneldiegbojfb) - если ставите её, то первую удалите
 
-Firefox версия ещё на проверке
+Firefox [версия](https://addons.mozilla.org/ru/firefox/addon/reyohoho-twitch-proxy)
 
 Метод для всех браузеров, поддерживающих Tampermonkey:
 
