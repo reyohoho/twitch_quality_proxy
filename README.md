@@ -6,7 +6,7 @@
   ⚠️ Используйте только одно расширение одновременно!
 
 - **Firefox**  
-  🔹 [Дополнение для Firefox](https://addons.mozilla.org/ru/firefox/addon/reyohoho-twitch-proxy)
+  🔹 [Расширение для Firefox](https://addons.mozilla.org/ru/firefox/addon/reyohoho-twitch-proxy)
 
 - **Метод для всех браузеров, поддерживающих Tampermonkey**  
  1. Установить [Tampermonkey](https://www.tampermonkey.net/)
