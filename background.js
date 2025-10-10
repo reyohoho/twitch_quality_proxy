@@ -32,6 +32,22 @@ async function updateProxyRules(enable) {
     const existingRuleIds = existingRules.map((rule) => rule.id);
 
     if (enable) {
+      let authToken = "";
+      try {
+        const cookie = await chrome.cookies.get({
+          url: "https://twitch.tv",
+          name: "auth-token"
+        });
+        if (cookie && cookie.value) {
+          authToken = "&auth=" + cookie.value;
+          console.log("Auth token retrieved from twitch.tv cookies: ", authToken);
+        } else {
+          console.log("Auth token not found in twitch.tv cookies");
+        }
+      } catch (error) {
+        console.error("Error retrieving auth token:", error);
+      }
+
       await chrome.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: existingRuleIds,
         addRules: [
@@ -41,32 +57,21 @@ async function updateProxyRules(enable) {
             action: {
               type: "redirect",
               redirect: {
-                regexSubstitution: PROXY_URL + "\\0",
+                regexSubstitution: PROXY_URL + "\\0" + authToken,
               },
             },
             condition: {
               initiatorDomains: ["twitch.tv"],
               regexFilter: "^https://usher\\.ttvnw\\.net/.*",
               resourceTypes: [
-                "main_frame",
-                "sub_frame",
-                "stylesheet",
-                "script",
-                "image",
-                "font",
-                "object",
                 "xmlhttprequest",
-                "ping",
-                "csp_report",
-                "media",
-                "websocket",
-                "other",
+                "media"
               ],
             },
           },
         ],
       });
-      console.log("Proxy rules enabled");
+      console.log("Proxy rules enabled with auth token");
     } else {
       await chrome.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: existingRuleIds,
@@ -92,29 +97,17 @@ async function checkAndUpdateProxy() {
   try {
     const isProxyAvailable = await checkProxyAvailability();
 
-    if (isProxyAvailable !== lastProxyStatus) {
-      lastProxyStatus = isProxyAvailable;
-      await updateProxyRules(isProxyAvailable);
-    }
+    await updateProxyRules(isProxyAvailable);
   } finally {
     proxyCheckInProgress = false;
   }
 }
 
 chrome.webNavigation.onBeforeNavigate.addListener(function (details) {
-  if (details.url.includes("usher.ttvnw.net")) {
+  if (details.url.includes("https://twitch.tv") || details.url.includes("https://www.twitch.tv")) {
     checkAndUpdateProxy();
   }
 });
-
-chrome.webRequest.onBeforeRequest.addListener(
-  function (details) {
-    checkAndUpdateProxy();
-  },
-  { urls: ["https://usher.ttvnw.net/*"] },
-  []
-);
-
 chrome.runtime.onStartup.addListener(checkAndUpdateProxy);
 chrome.runtime.onInstalled.addListener(checkAndUpdateProxy);
 
