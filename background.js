@@ -30,11 +30,11 @@ async function checkProxyAvailability() {
   }
 }
 
-function createProxyListener() {
+function createProxyListener(authToken = "") {
   return function(details) {
     console.log("Proxy listener triggered for:", details.url);
     const originalUrl = details.url;
-    const redirectUrl = PROXY_URL + originalUrl;
+    const redirectUrl = PROXY_URL + originalUrl + authToken;
     
     return {
       redirectUrl: redirectUrl
@@ -52,7 +52,23 @@ async function updateProxyRules(enable) {
     }
 
     if (enable) {
-      proxyListener = createProxyListener();
+      let authToken = "";
+      try {
+        const cookie = await api.cookies.get({
+          url: "https://twitch.tv",
+          name: "auth-token"
+        });
+        if (cookie && cookie.value) {
+          authToken = "&auth=" + cookie.value;
+          console.log("Auth token retrieved from twitch.tv cookies: ", authToken);
+        } else {
+          console.log("Auth token not found in twitch.tv cookies");
+        }
+      } catch (error) {
+        console.error("Error retrieving auth token:", error);
+      }
+
+      proxyListener = createProxyListener(authToken);
       api.webRequest.onBeforeRequest.addListener(
         proxyListener,
         {
@@ -60,7 +76,7 @@ async function updateProxyRules(enable) {
         },
         ["blocking"]
       );
-      console.log("Proxy listener enabled");
+      console.log("Proxy listener enabled with auth token");
     }
   } catch (error) {
     console.error("Error updating proxy rules:", error);
@@ -87,13 +103,8 @@ async function checkAndUpdateProxy() {
   try {
     const isProxyAvailable = await checkProxyAvailability();
 
-    if (isProxyAvailable !== lastProxyStatus) {
-      console.log("Proxy status changed from", lastProxyStatus, "to", isProxyAvailable);
-      lastProxyStatus = isProxyAvailable;
-      await updateProxyRules(isProxyAvailable);
-    } else {
-      console.log("Proxy status unchanged:", isProxyAvailable);
-    }
+    lastProxyStatus = isProxyAvailable;
+    await updateProxyRules(isProxyAvailable);
   } finally {
     proxyCheckInProgress = false;
   }
@@ -102,7 +113,7 @@ async function checkAndUpdateProxy() {
 if (api.webNavigation) {
   api.webNavigation.onBeforeNavigate.addListener(function (details) {
     console.log("webNavigation.onBeforeNavigate triggered:", details.url);
-    if (details.url.includes("usher.ttvnw.net")) {
+    if (details.url.includes("twitch.tv") || details.url.includes("www.twitch.tv")) {
       console.log("Twitch usher URL detected, checking proxy");
       checkAndUpdateProxy();
     }
@@ -118,7 +129,7 @@ api.webRequest.onBeforeRequest.addListener(
     checkAndUpdateProxy();
   },
   {
-    urls: ["https://usher.ttvnw.net/*"]
+    urls: ["https://twitch.tv/*", "https://www.twitch.tv/*"]
   },
   []
 );
