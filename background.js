@@ -1,7 +1,9 @@
 const PROXY_DOMAINS = [
   "https://proxy4.rhhhhhhh.live/",
+  "https://proxy7.rhhhhhhh.live/",
   "https://proxy5.rhhhhhhh.live/",
-  "https://proxy6.rhhhhhhh.live/"
+  "https://proxy6.rhhhhhhh.live/",
+
 ];
 
 let proxyCheckInProgress = false;
