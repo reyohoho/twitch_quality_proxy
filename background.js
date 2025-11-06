@@ -2,6 +2,7 @@ const api = typeof browser !== 'undefined' ? browser : chrome;
 
 const PROXY_SERVERS = [
   "https://proxy4.rhhhhhhh.live/",
+  "https://proxy7.rhhhhhhh.live/",
   "https://proxy5.rhhhhhhh.live/",
   "https://proxy6.rhhhhhhh.live/"
 ];
