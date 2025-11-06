@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ReYohoho Twitch Proxy 1080p/1440p (Russia)",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Прокси для Twitch, чтобы смотреть в 1080p/1440p (РФ)",
   "permissions": [
     "declarativeNetRequest",
@@ -12,7 +12,9 @@
   "host_permissions": [
     "https://usher.ttvnw.net/*",
     "https://*.twitch.tv/*",
-    "https://proxy4.rhhhhhhh.live/*"
+    "https://proxy4.rhhhhhhh.live/*",
+    "https://proxy5.rhhhhhhh.live/*",
+    "https://proxy6.rhhhhhhh.live/*"
   ],
   "background": {
     "service_worker": "background.js"

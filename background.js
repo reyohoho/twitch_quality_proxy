@@ -1,37 +1,59 @@
-const PROXY_URL = "https://proxy4.rhhhhhhh.live/";
-const PROXY_CHECK_URL = "https://proxy4.rhhhhhhh.live/https://google.com";
+const PROXY_DOMAINS = [
+  "https://proxy4.rhhhhhhh.live/",
+  "https://proxy5.rhhhhhhh.live/",
+  "https://proxy6.rhhhhhhh.live/"
+];
 
 let proxyCheckInProgress = false;
 let lastProxyStatus = null;
 let lastCheckTime = 0;
 const CHECK_INTERVAL = 5000;
+const PROXY_TIMEOUT = 3000;
 
-async function checkProxyAvailability() {
+let currentProxyUrl = null;
+
+async function checkSingleProxyAvailability(proxyUrl, timeout = PROXY_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
   try {
-    const response = await fetch(PROXY_CHECK_URL, {
+    const checkUrl = proxyUrl + "https://google.com";
+    const response = await fetch(checkUrl, {
       method: "HEAD",
       mode: "cors",
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
     const isAvailable = response.ok;
-    console.log(
-      `Proxy availability check: ${
-        isAvailable ? "Available" : "Unavailable"
-      } (${response.status})`
-    );
+    console.log(`Proxy ${proxyUrl} check: ${isAvailable ? "Available" : "Unavailable"} (${response.status})`);
     return isAvailable;
   } catch (error) {
-    console.error("Proxy availability check failed:", error);
+    clearTimeout(timeoutId);
+    console.error(`Proxy ${proxyUrl} check failed:`, error.message);
     return false;
   }
 }
 
-async function updateProxyRules(enable) {
+async function findAvailableProxy() {
+  for (const proxyUrl of PROXY_DOMAINS) {
+    const isAvailable = await checkSingleProxyAvailability(proxyUrl);
+    if (isAvailable) {
+      console.log(`Found available proxy: ${proxyUrl}`);
+      return proxyUrl;
+    }
+  }
+  
+  console.error("No available proxy servers found!");
+  return null;
+}
+
+async function updateProxyRules(enable, proxyUrl) {
   try {
     const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
     const existingRuleIds = existingRules.map((rule) => rule.id);
 
-    if (enable) {
+    if (enable && proxyUrl) {
       let authToken = "";
       try {
         const cookie = await chrome.cookies.get({
@@ -57,7 +79,7 @@ async function updateProxyRules(enable) {
             action: {
               type: "redirect",
               redirect: {
-                regexSubstitution: PROXY_URL + "\\0" + authToken,
+                regexSubstitution: proxyUrl + "\\0" + authToken,
               },
             },
             condition: {
@@ -71,7 +93,7 @@ async function updateProxyRules(enable) {
           },
         ],
       });
-      console.log("Proxy rules enabled with auth token");
+      console.log(`Proxy rules enabled with ${proxyUrl} and auth token`);
     } else {
       await chrome.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: existingRuleIds,
@@ -88,16 +110,24 @@ async function checkAndUpdateProxy() {
 
   const now = Date.now();
   if (now - lastCheckTime < CHECK_INTERVAL) {
-    return;
+    if (currentProxyUrl) {
+      return;
+    }
   }
 
   proxyCheckInProgress = true;
   lastCheckTime = now;
 
   try {
-    const isProxyAvailable = await checkProxyAvailability();
-
-    await updateProxyRules(isProxyAvailable);
+    const availableProxy = await findAvailableProxy();
+    
+    if (availableProxy) {
+      currentProxyUrl = availableProxy;
+      await updateProxyRules(true, availableProxy);
+    } else {
+      currentProxyUrl = null;
+      await updateProxyRules(false, null);
+    }
   } finally {
     proxyCheckInProgress = false;
   }
