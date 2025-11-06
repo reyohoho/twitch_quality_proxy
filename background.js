@@ -1,40 +1,66 @@
 const api = typeof browser !== 'undefined' ? browser : chrome;
 
-const PROXY_URL = "https://proxy4.rhhhhhhh.live/";
-const PROXY_CHECK_URL = "https://proxy4.rhhhhhhh.live/https://google.com";
+const PROXY_SERVERS = [
+  "https://proxy4.rhhhhhhh.live/",
+  "https://proxy5.rhhhhhhh.live/",
+  "https://proxy6.rhhhhhhh.live/"
+];
 
+const PROXY_CHECK_TIMEOUT = 3000;
+
+let currentProxyUrl = null;
 let proxyCheckInProgress = false;
 let lastProxyStatus = null;
 let lastCheckTime = 0;
 const CHECK_INTERVAL = 5000;
 let proxyListener = null;
 
-async function checkProxyAvailability() {
-  console.log("Starting proxy availability check...");
+async function checkSingleProxy(proxyUrl) {
+  console.log(`Checking proxy: ${proxyUrl}`);
   try {
-    const response = await fetch(PROXY_CHECK_URL, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PROXY_CHECK_TIMEOUT);
+    
+    const checkUrl = proxyUrl + "https://google.com";
+    const response = await fetch(checkUrl, {
       method: "HEAD",
       mode: "cors",
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
+    
     const isAvailable = response.ok;
-    console.log(
-      `Proxy availability check: ${
-        isAvailable ? "Available" : "Unavailable"
-      } (${response.status})`
-    );
+    console.log(`Proxy ${proxyUrl} status: ${isAvailable ? "Available" : "Unavailable"} (${response.status})`);
     return isAvailable;
   } catch (error) {
-    console.error("Proxy availability check failed:", error);
+    console.error(`Proxy ${proxyUrl} check failed:`, error.name, error.message);
     return false;
   }
+}
+
+async function findAvailableProxy() {
+  console.log("Starting search for available proxy...");
+  
+  for (const proxyUrl of PROXY_SERVERS) {
+    const isAvailable = await checkSingleProxy(proxyUrl);
+    if (isAvailable) {
+      console.log(`Found available proxy: ${proxyUrl}`);
+      return proxyUrl;
+    }
+  }
+  
+  console.warn("No available proxy found, proxy will be disabled");
+  return null;
 }
 
 function createProxyListener(authToken = "") {
   return function(details) {
     console.log("Proxy listener triggered for:", details.url);
     const originalUrl = details.url;
-    const redirectUrl = PROXY_URL + originalUrl + authToken;
+    const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
+    const redirectUrl = proxyUrl + originalUrl + authToken;
+    console.log(`Using proxy: ${proxyUrl}`);
     
     return {
       redirectUrl: redirectUrl
@@ -101,10 +127,18 @@ async function checkAndUpdateProxy() {
   lastCheckTime = now;
 
   try {
-    const isProxyAvailable = await checkProxyAvailability();
-
-    lastProxyStatus = isProxyAvailable;
-    await updateProxyRules(isProxyAvailable);
+    const availableProxy = await findAvailableProxy();
+    currentProxyUrl = availableProxy;
+    
+    if (availableProxy === null) {
+      console.log("All proxies unavailable, disabling proxy");
+      lastProxyStatus = false;
+      await updateProxyRules(false);
+    } else {
+      console.log(`Using proxy: ${availableProxy}`);
+      lastProxyStatus = true;
+      await updateProxyRules(true);
+    }
   } finally {
     proxyCheckInProgress = false;
   }
