@@ -1,8 +1,8 @@
 const PROXY_DOMAINS = [
-  "https://proxy4.rhhhhhhh.live/",
-  "https://proxy7.rhhhhhhh.live/",
-  "https://proxy5.rhhhhhhh.live/",
-  "https://proxy6.rhhhhhhh.live/",
+  "https://proxy4.rte.net.ru/",
+  "https://proxy7.rte.net.ru/",
+  "https://proxy5.rte.net.ru/",
+  "https://proxy6.rte.net.ru/",
 
 ];
 
