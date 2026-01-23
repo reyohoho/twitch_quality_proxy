@@ -1,0 +1,198 @@
+.reyohoho-proxy-settings {
+    padding: 10px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.3) 100%);
+    border-radius: 6px;
+    margin: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.reyohoho-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.reyohoho-status {
+    margin-bottom: 10px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.reyohoho-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+}
+
+.reyohoho-status-label {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.reyohoho-status-value {
+    font-weight: 500;
+    color: #ffffff;
+}
+
+.reyohoho-status-value.proxy-url {
+    font-family: monospace;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.reyohoho-status-value.status-connected {
+    color: #ffffff;
+}
+
+.reyohoho-status-value.status-connected::before {
+    content: '●';
+    margin-right: 5px;
+    font-size: 8px;
+}
+
+.reyohoho-status-value.status-checking {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.reyohoho-status-value.status-checking::before {
+    content: '●';
+    margin-right: 5px;
+    font-size: 8px;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+}
+
+.reyohoho-status-value.status-error,
+.reyohoho-status-value.status-unavailable {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.reyohoho-status-value.status-error::before,
+.reyohoho-status-value.status-unavailable::before {
+    content: '✕';
+    margin-right: 5px;
+    font-size: 10px;
+}
+
+.reyohoho-status-value.status-unknown {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.reyohoho-icon {
+    font-size: 18px;
+    filter: grayscale(100%);
+}
+
+.reyohoho-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.reyohoho-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.reyohoho-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.reyohoho-option:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.reyohoho-option.active {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.reyohoho-option input[type="radio"] {
+    display: none;
+}
+
+.reyohoho-radio {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    position: relative;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+
+.reyohoho-option:hover .reyohoho-radio {
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+.reyohoho-option.active .reyohoho-radio {
+    border-color: #ffffff;
+}
+
+.reyohoho-option.active .reyohoho-radio::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px;
+    height: 8px;
+    background: #ffffff;
+    border-radius: 50%;
+}
+
+.reyohoho-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.reyohoho-option-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #efeff1;
+}
+
+.reyohoho-option-desc {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.reyohoho-option.active .reyohoho-option-title {
+    color: #ffffff;
+}
+
+.reyohoho-option.active .reyohoho-option-desc {
+    color: rgba(255, 255, 255, 0.7);
+}

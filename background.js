@@ -7,14 +7,34 @@ const PROXY_SERVERS = [
   "https://proxy6.rte.net.ru/"
 ];
 
+const TEST_MODE_PARAM = "&proxymode=adblock";
+
+const MODES = {
+  OLD: 'old',
+  TEST: 'test'
+};
+
 const PROXY_CHECK_TIMEOUT = 3000;
 
 let currentProxyUrl = null;
 let proxyCheckInProgress = false;
-let lastProxyStatus = null;
 let lastCheckTime = 0;
 const CHECK_INTERVAL = 5000;
 let proxyListener = null;
+let proxyStatus = 'unknown'; // 'connected', 'checking', 'error', 'unavailable'
+let currentMode = MODES.OLD;
+
+async function loadMode() {
+  try {
+    const result = await api.storage.local.get(['proxyMode']);
+    if (result.proxyMode) {
+      currentMode = result.proxyMode;
+      console.log(`Loaded mode: ${currentMode}`);
+    }
+  } catch (e) {
+    console.error('Error loading mode:', e);
+  }
+}
 
 async function checkSingleProxy(proxyUrl) {
   console.log(`Checking proxy: ${proxyUrl}`);
@@ -55,13 +75,13 @@ async function findAvailableProxy() {
   return null;
 }
 
-function createProxyListener(authToken = "") {
+function createProxyListener(authToken = "", extraParams = "") {
   return function(details) {
     console.log("Proxy listener triggered for:", details.url);
     const originalUrl = details.url;
     const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
-    const redirectUrl = proxyUrl + originalUrl + authToken;
-    console.log(`Using proxy: ${proxyUrl}`);
+    const redirectUrl = proxyUrl + originalUrl + authToken + extraParams;
+    console.log(`Using proxy: ${proxyUrl} (mode: ${currentMode})`);
     
     return {
       redirectUrl: redirectUrl
@@ -80,6 +100,8 @@ async function updateProxyRules(enable) {
 
     if (enable) {
       let authToken = "";
+      let extraParams = "";
+
       try {
         const cookie = await api.cookies.get({
           url: "https://twitch.tv",
@@ -87,7 +109,7 @@ async function updateProxyRules(enable) {
         });
         if (cookie && cookie.value) {
           authToken = "&auth=" + cookie.value;
-          console.log("Auth token retrieved from twitch.tv cookies: ", authToken);
+          console.log("Auth token retrieved from twitch.tv cookies");
         } else {
           console.log("Auth token not found in twitch.tv cookies");
         }
@@ -95,7 +117,12 @@ async function updateProxyRules(enable) {
         console.error("Error retrieving auth token:", error);
       }
 
-      proxyListener = createProxyListener(authToken);
+      if (currentMode === MODES.TEST) {
+        extraParams = TEST_MODE_PARAM;
+        console.log("Test mode enabled, adding param:", TEST_MODE_PARAM);
+      }
+
+      proxyListener = createProxyListener(authToken, extraParams);
       api.webRequest.onBeforeRequest.addListener(
         proxyListener,
         {
@@ -103,7 +130,7 @@ async function updateProxyRules(enable) {
         },
         ["blocking"]
       );
-      console.log("Proxy listener enabled with auth token");
+      console.log(`Proxy listener enabled (mode: ${currentMode})`);
     }
   } catch (error) {
     console.error("Error updating proxy rules:", error);
@@ -120,36 +147,75 @@ async function checkAndUpdateProxy() {
 
   const now = Date.now();
   if (now - lastCheckTime < CHECK_INTERVAL) {
-    console.log("Check interval not reached, skipping. Time since last check:", now - lastCheckTime);
-    return;
+    if (currentProxyUrl) {
+      console.log("Check interval not reached and proxy exists, skipping");
+      return;
+    }
   }
 
   proxyCheckInProgress = true;
   lastCheckTime = now;
+  proxyStatus = 'checking';
 
   try {
+    await loadMode();
+    
     const availableProxy = await findAvailableProxy();
     currentProxyUrl = availableProxy;
     
     if (availableProxy === null) {
       console.log("All proxies unavailable, disabling proxy");
-      lastProxyStatus = false;
+      proxyStatus = 'unavailable';
       await updateProxyRules(false);
     } else {
       console.log(`Using proxy: ${availableProxy}`);
-      lastProxyStatus = true;
+      proxyStatus = 'connected';
       await updateProxyRules(true);
     }
+  } catch (error) {
+    proxyStatus = 'error';
+    console.error('Error in checkAndUpdateProxy:', error);
   } finally {
     proxyCheckInProgress = false;
   }
 }
 
+// Message listener for communication with content script
+api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'modeChanged') {
+    console.log(`Mode changed to: ${message.mode}`);
+    currentMode = message.mode;
+    currentProxyUrl = null;
+    lastCheckTime = 0;
+    proxyStatus = 'checking';
+    checkAndUpdateProxy();
+    sendResponse({ success: true });
+  } else if (message.type === 'getProxyStatus') {
+    sendResponse({
+      proxyUrl: currentProxyUrl,
+      status: proxyStatus,
+      mode: currentMode
+    });
+  }
+  return true;
+});
+
+// Storage change listener
+api.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.proxyMode) {
+    console.log(`Storage mode changed: ${changes.proxyMode.oldValue} -> ${changes.proxyMode.newValue}`);
+    currentMode = changes.proxyMode.newValue;
+    currentProxyUrl = null;
+    lastCheckTime = 0;
+    checkAndUpdateProxy();
+  }
+});
+
 if (api.webNavigation) {
   api.webNavigation.onBeforeNavigate.addListener(function (details) {
     console.log("webNavigation.onBeforeNavigate triggered:", details.url);
     if (details.url.includes("twitch.tv") || details.url.includes("www.twitch.tv")) {
-      console.log("Twitch usher URL detected, checking proxy");
+      console.log("Twitch URL detected, checking proxy");
       checkAndUpdateProxy();
     }
   });
@@ -170,18 +236,22 @@ api.webRequest.onBeforeRequest.addListener(
 );
 
 if (api.runtime.onStartup) {
-  api.runtime.onStartup.addListener(() => {
+  api.runtime.onStartup.addListener(async () => {
     console.log("Extension startup detected");
+    await loadMode();
     checkAndUpdateProxy();
   });
 }
 
 if (api.runtime.onInstalled) {
-  api.runtime.onInstalled.addListener(() => {
+  api.runtime.onInstalled.addListener(async () => {
     console.log("Extension installed/updated");
+    await loadMode();
     checkAndUpdateProxy();
   });
 }
 
-console.log("Twitch proxy service worker initialized");
-checkAndUpdateProxy();
+loadMode().then(() => {
+  console.log(`Twitch proxy service worker initialized (mode: ${currentMode})`);
+  checkAndUpdateProxy();
+});
