@@ -169,17 +169,8 @@ function injectIntoElement(container) {
 }
 
 function isMainSettingsMenu(menu) {
-    const backButton = menu.querySelector('[data-a-target="player-settings-back-button"]');
-    if (backButton) {
-        return false;
-    }
 
-    const qualityOption = menu.querySelector('[data-a-target="player-settings-menu-item-quality"]');
-    if (qualityOption) {
-        return true;
-    }
-
-    return false;
+    return true;
 }
 
 function removeFromSubmenus() {
