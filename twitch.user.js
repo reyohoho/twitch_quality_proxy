@@ -13,7 +13,7 @@
 (function() {
     'use strict';
     
-    const PROXY_URL = 'https://proxy-ad-test.rte.net.ru/';
+    const PROXY_URL = 'https://proxy-ad-test2.rte.net.ru/';
     const TARGET_PATTERN = /https:\/\/usher\.ttvnw\.net\//g;
     
     const originalWorker = window.Worker;
