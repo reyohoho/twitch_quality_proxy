@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "name": "ReYohoho Twitch Proxy 1080p/1440p (Russia)",
+  "version": "2.1.0",
+  "description": "Прокси для Twitch с поддержкой 1080p/1440p",
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "webNavigation",
+    "cookies",
+    "storage",
+    "https://usher.ttvnw.net/*",
+    "https://*.twitch.tv/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.twitch.tv/*",
+        "https://twitch.tv/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "applications": {
+    "gecko": {
+      "id": "reyohoho-twitch-proxy2@rhhhhhhh.live",
+      "strict_min_version": "58.0"
+    }
+  }
+}

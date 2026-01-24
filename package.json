@@ -1,0 +1,30 @@
+{
+  "name": "reyohoho-twitch-proxy",
+  "version": "2.0.0",
+  "description": "Прокси для Twitch с поддержкой 1080p/1440p и блокировкой рекламы (VAFT)",
+  "author": "ReYohoho",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build:firefox": "node scripts/build.js firefox",
+    "build:chromium": "node scripts/build.js chromium",
+    "build:userscript": "node scripts/build.js userscript"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reyohoho/twitch_quality_universal"
+  },
+  "keywords": [
+    "twitch",
+    "proxy",
+    "1080p",
+    "1440p",
+    "adblock",
+    "vaft",
+    "extension",
+    "userscript"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
