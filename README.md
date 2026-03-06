@@ -22,7 +22,7 @@ Twitch в РФ ограничил 1080P качество видео, есть с
 - **Метод для всех браузеров, поддерживающих Tampermonkey**  
  1. Установить [Tampermonkey](https://www.tampermonkey.net/)
  2. Включите в браузере режим [разработчика](https://www.tampermonkey.net/faq.php?locale=en#Q209)
- 3. Перейти по [ссылке](https://github.com/reyohoho/twitch_quality_universal/raw/main/dist/userscript/reyohoho-twitch.user.js) откроется окно с предложением установить скрипт
+ 3. Перейти по [ссылке](https://github.com/reyohoho/twitch_quality_proxy/raw/refs/heads/universal/dist/userscript/reyohoho-twitch.user.js) откроется окно с предложением установить скрипт
    
 Так же важно:
  - ⚠️ Отключите альтернативный плеер твича или подобное, с ним может не работать
