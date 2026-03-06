@@ -2,7 +2,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -34,11 +34,13 @@ const VAFT_CONFIG = {
     PlayerReloadMinimalRequestsTime: 1500,
     PlayerReloadMinimalRequestsPlayerIndex: 2,
     PlayerBufferingFix: true,
-    PlayerBufferingDelay: 500,
+    PlayerBufferingDelay: 600,
     PlayerBufferingSameStateCount: 3,
     PlayerBufferingDangerZone: 1,
     PlayerBufferingDoPlayerReload: false,
-    PlayerBufferingMinRepeatDelay: 5000,
+    PlayerBufferingMinRepeatDelay: 8000,
+    PlayerBufferingPrerollCheckEnabled: false,
+    PlayerBufferingPrerollCheckOffset: 5,
     IsAdStrippingEnabled: true
 };
 

@@ -6,7 +6,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -38,11 +38,13 @@ const VAFT_CONFIG = {
     PlayerReloadMinimalRequestsTime: 1500,
     PlayerReloadMinimalRequestsPlayerIndex: 2,
     PlayerBufferingFix: true,
-    PlayerBufferingDelay: 500,
+    PlayerBufferingDelay: 600,
     PlayerBufferingSameStateCount: 3,
     PlayerBufferingDangerZone: 1,
     PlayerBufferingDoPlayerReload: false,
-    PlayerBufferingMinRepeatDelay: 5000,
+    PlayerBufferingMinRepeatDelay: 8000,
+    PlayerBufferingPrerollCheckEnabled: false,
+    PlayerBufferingPrerollCheckOffset: 5,
     IsAdStrippingEnabled: true
 };
 
@@ -95,7 +97,7 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
           <span class="reyohoho-toggle-slider"></span>
         </label>
       </div>
-      <span class="reyohoho-section-desc">Локальная блокировка рекламы через подмену потоков</span>
+      <span class="reyohoho-section-desc">Локальная блокировка через подмену потоков</span>
       
     </div>
     <div class="reyohoho-links">
@@ -298,11 +300,13 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
     PlayerReloadMinimalRequestsTime: 1500,
     PlayerReloadMinimalRequestsPlayerIndex: 2,
     PlayerBufferingFix: true,
-    PlayerBufferingDelay: 500,
+    PlayerBufferingDelay: 600,
     PlayerBufferingSameStateCount: 3,
     PlayerBufferingDangerZone: 1,
     PlayerBufferingDoPlayerReload: false,
-    PlayerBufferingMinRepeatDelay: 5000,
+    PlayerBufferingMinRepeatDelay: 8000,
+    PlayerBufferingPrerollCheckEnabled: false,
+    PlayerBufferingPrerollCheckOffset: 5,
     IsAdStrippingEnabled: true
 };
 // ============================================
@@ -315,7 +319,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
 function initVAFT() {
     'use strict';
 
-    const ourTwitchAdSolutionsVersion = 20;
+    const ourTwitchAdSolutionsVersion = 24;
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("[ReYohoho VAFT] Skipping - another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
         return;
@@ -348,6 +352,8 @@ function initVAFT() {
         scope.PlayerBufferingDangerZone = VAFT_CONFIG.PlayerBufferingDangerZone;
         scope.PlayerBufferingDoPlayerReload = VAFT_CONFIG.PlayerBufferingDoPlayerReload;
         scope.PlayerBufferingMinRepeatDelay = VAFT_CONFIG.PlayerBufferingMinRepeatDelay;
+        scope.PlayerBufferingPrerollCheckEnabled = VAFT_CONFIG.PlayerBufferingPrerollCheckEnabled;
+        scope.PlayerBufferingPrerollCheckOffset = VAFT_CONFIG.PlayerBufferingPrerollCheckOffset;
         scope.V2API = false;
         scope.IsAdStrippingEnabled = VAFT_CONFIG.IsAdStrippingEnabled;
         scope.AdSegmentCache = new Map();
@@ -713,7 +719,7 @@ function initVAFT() {
             streamInfo.NumStrippedAdSegments = 0;
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
-        AdSegmentCache.forEach((key, value, map) => {
+        AdSegmentCache.forEach((value, key, map) => {
             if (value < Date.now() - 120000) {
                 map.delete(key);
             }
@@ -933,9 +939,9 @@ function initVAFT() {
 
     function gqlRequest(body, playerType) {
         if (!GQLDeviceID) {
+            GQLDeviceID = '';
             const dcharacters = 'abcdefghijklmnopqrstuvwxyz0123456789';
             const dcharactersLength = dcharacters.length;
-            GQLDeviceID = '';
             for (let i = 0; i < 32; i++) {
                 GQLDeviceID += dcharacters.charAt(Math.floor(Math.random() * dcharactersLength));
             }
@@ -966,6 +972,8 @@ function initVAFT() {
 
     let playerForMonitoringBuffering = null;
     const playerBufferState = {
+        channelName: null,
+        hasStreamStarted: false,
         position: 0,
         bufferedPosition: 0,
         bufferDuration: 0,
@@ -982,26 +990,50 @@ function initVAFT() {
                 if (!player.core) {
                     playerForMonitoringBuffering = null;
                 } else if (state.props?.content?.type === 'live' && !player.isPaused() && !player.getHTMLVideoElement()?.ended && playerBufferState.lastFixTime <= Date.now() - PlayerBufferingMinRepeatDelay && !isActivelyStrippingAds) {
+                    const m3u8Url = player.core?.state?.path;
+                    if (m3u8Url) {
+                        const fileName = new URL(m3u8Url).pathname.split('/').pop();
+                        if (fileName?.endsWith('.m3u8')) {
+                            const channelName = fileName.slice(0, -5);
+                            if (playerBufferState.channelName != channelName) {
+                                playerBufferState.channelName = channelName;
+                                playerBufferState.hasStreamStarted = false;
+                                playerBufferState.numSame = 0;
+                            }
+                        }
+                    }
+                    if (player.getState() === 'Playing') {
+                        playerBufferState.hasStreamStarted = true;
+                    }
                     const position = player.core?.state?.position;
                     const bufferedPosition = player.core?.state?.bufferedPosition;
                     const bufferDuration = player.getBufferDuration();
-                    if (position > 5 &&
-                        (playerBufferState.position == position || bufferDuration < PlayerBufferingDangerZone) &&
-                        playerBufferState.bufferedPosition == bufferedPosition &&
-                        playerBufferState.bufferDuration >= bufferDuration &&
-                        (position != 0 || bufferedPosition != 0 || bufferDuration != 0)
-                    ) {
-                        playerBufferState.numSame++;
-                        if (playerBufferState.numSame == PlayerBufferingSameStateCount) {
-                            doTwitchPlayerTask(!PlayerBufferingDoPlayerReload, PlayerBufferingDoPlayerReload);
-                            playerBufferState.lastFixTime = Date.now();
+                    if (position !== undefined && bufferedPosition !== undefined) {
+                        if (playerBufferState.hasStreamStarted &&
+                            (!PlayerBufferingPrerollCheckEnabled || position > PlayerBufferingPrerollCheckOffset) &&
+                            (playerBufferState.position == position || bufferDuration < PlayerBufferingDangerZone) &&
+                            playerBufferState.bufferedPosition == bufferedPosition &&
+                            playerBufferState.bufferDuration >= bufferDuration &&
+                            (position != 0 || bufferedPosition != 0 || bufferDuration != 0)
+                        ) {
+                            playerBufferState.numSame++;
+                            if (playerBufferState.numSame == PlayerBufferingSameStateCount) {
+                                console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration);
+                                const isPausePlay = !PlayerBufferingDoPlayerReload;
+                                const isReload = PlayerBufferingDoPlayerReload;
+                                doTwitchPlayerTask(isPausePlay, isReload);
+                                playerBufferState.lastFixTime = Date.now();
+                                playerBufferState.numSame = 0;
+                            }
+                        } else {
+                            playerBufferState.numSame = 0;
                         }
+                        playerBufferState.position = position;
+                        playerBufferState.bufferedPosition = bufferedPosition;
+                        playerBufferState.bufferDuration = bufferDuration;
                     } else {
                         playerBufferState.numSame = 0;
                     }
-                    playerBufferState.position = position;
-                    playerBufferState.bufferedPosition = bufferedPosition;
-                    playerBufferState.bufferDuration = bufferDuration;
                 }
             } catch (err) {
                 playerForMonitoringBuffering = null;
@@ -1086,6 +1118,8 @@ function initVAFT() {
         const playerState = playerAndState.state;
         if (!player || !playerState) return;
         if (player.isPaused() || player.core?.paused) return;
+        playerBufferState.lastFixTime = Date.now();
+        playerBufferState.numSame = 0;
         if (isPausePlay) {
             player.pause();
             player.play();
@@ -1201,6 +1235,10 @@ function initVAFT() {
                     if (typeof init?.headers?.['Authorization'] === 'string' && init.headers['Authorization'] !== AuthorizationHeader) {
                         postTwitchWorkerMessage('UpdateAuthorizationHeader', AuthorizationHeader = init.headers['Authorization']);
                     }
+                    // Get rid of mini player above chat - TODO: Reject this locally instead of having server reject it
+                    if (init && typeof init.body === 'string' && init.body.includes('PlaybackAccessToken') && init.body.includes('picture-by-picture')) {
+                        init.body = '';
+                    }
                     if (ForceAccessTokenPlayerType && typeof init?.body === 'string' && init.body.includes('PlaybackAccessToken')) {
                         let replacedPlayerType = '';
                         const newBody = JSON.parse(init.body);
@@ -1220,9 +1258,6 @@ function initVAFT() {
                         if (replacedPlayerType) {
                             init.body = JSON.stringify(newBody);
                         }
-                    }
-                    if (init && typeof init.body === 'string' && init.body.includes('PlaybackAccessToken') && init.body.includes('picture-by-picture')) {
-                        init.body = '';
                     }
                 }
             }
@@ -1246,12 +1281,16 @@ function initVAFT() {
         };
         let wasVideoPlaying = true;
         const visibilityChange = e => {
-            if (typeof chrome !== 'undefined') {
-                const videos = document.getElementsByTagName('video');
-                if (videos.length > 0) {
-                    if (hidden?.apply(document) === true || (webkitHidden && webkitHidden.apply(document) === true)) {
-                        wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-                    } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
+            const isChrome = typeof chrome !== 'undefined';
+            const videos = document.getElementsByTagName('video');
+            if (videos.length > 0) {
+                if (hidden?.apply(document) === true || (webkitHidden && webkitHidden.apply(document) === true)) {
+                    wasVideoPlaying = !videos[0].paused && !videos[0].ended;
+                } else {
+                    if (!playerBufferState.hasStreamStarted) {
+                        playerBufferState.hasStreamStarted = true;
+                    }
+                    if (isChrome && wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
                         videos[0].play();
                     }
                 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.1.0
+// @version      2.2.0
 // @description  Прокси для Twitch с поддержкой 1080p/1440p
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
