@@ -45,7 +45,7 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
           <span class="reyohoho-toggle-slider"></span>
         </label>
       </div>
-      <span class="reyohoho-section-desc">Локальная блокировка рекламы через подмену потоков</span>
+      <span class="reyohoho-section-desc">Локальная блокировка через подмену потоков</span>
       <!-- @build-vaft-test-button -->
     </div>
     <div class="reyohoho-links">
