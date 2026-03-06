@@ -8,8 +8,8 @@
 // @match        https://twitch.tv/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://github.com/reyohoho/twitch_quality_universal/raw/main/dist/userscript/reyohoho-twitch.user.js
-// @downloadURL  https://github.com/reyohoho/twitch_quality_universal/raw/main/dist/userscript/reyohoho-twitch.user.js
+// @updateURL    https://github.com/reyohoho/twitch_quality_proxy/raw/refs/heads/universal/dist/userscript/reyohoho-twitch.user.js
+// @downloadURL  https://github.com/reyohoho/twitch_quality_proxy/raw/refs/heads/universal/dist/userscript/reyohoho-twitch.user.js
 // ==/UserScript==
 
 (function () {
