@@ -6,7 +6,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -362,6 +362,8 @@ function initVAFT() {
 
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
+    let lastKnownAudioState = null;
+    let audioRestoreToken = 0;
     const twitchWorkers = [];
     const workerStringConflicts = ['twitch', 'isVariantA'];
     const workerStringAllow = [];
@@ -1111,6 +1113,102 @@ function initVAFT() {
         return { player: player, state: playerState };
     }
 
+    function clampVolume(volume) {
+        if (!Number.isFinite(volume)) return 0.5;
+        return Math.min(1, Math.max(0, volume));
+    }
+
+    function getCurrentVideo() {
+        const videos = document.getElementsByTagName('video');
+        return videos.length > 0 ? videos[0] : null;
+    }
+
+    function getCurrentAudioState(player) {
+        const video = getCurrentVideo();
+        let muted = typeof video?.muted === 'boolean' ? video.muted : undefined;
+        let volume = Number.isFinite(video?.volume) ? video.volume : undefined;
+        if (typeof muted !== 'boolean') {
+            try {
+                if (typeof player?.getMuted === 'function') {
+                    muted = player.getMuted();
+                } else if (typeof player?.core?.state?.muted === 'boolean') {
+                    muted = player.core.state.muted;
+                }
+            } catch { }
+        }
+        if (!Number.isFinite(volume)) {
+            try {
+                if (typeof player?.getVolume === 'function') {
+                    volume = player.getVolume();
+                } else if (Number.isFinite(player?.core?.state?.volume)) {
+                    volume = player.core.state.volume;
+                }
+            } catch { }
+        }
+        if (typeof muted !== 'boolean' && !Number.isFinite(volume)) {
+            return lastKnownAudioState;
+        }
+        return {
+            muted: typeof muted === 'boolean' ? muted : Boolean(lastKnownAudioState?.muted),
+            volume: clampVolume(Number.isFinite(volume) ? volume : lastKnownAudioState?.volume)
+        };
+    }
+
+    function rememberCurrentAudioState(player) {
+        const audioState = getCurrentAudioState(player);
+        if (audioState) {
+            lastKnownAudioState = audioState;
+        }
+        return audioState;
+    }
+
+    function applyAudioState(audioState, player) {
+        if (!audioState) return;
+        try {
+            const video = getCurrentVideo();
+            if (video) {
+                video.volume = audioState.volume;
+                video.muted = audioState.muted;
+            }
+        } catch { }
+        try {
+            if (typeof player?.setVolume === 'function') {
+                player.setVolume(audioState.volume);
+            }
+        } catch { }
+        try {
+            if (typeof player?.setMuted === 'function') {
+                player.setMuted(audioState.muted);
+            } else if (typeof player?.setIsMuted === 'function') {
+                player.setIsMuted(audioState.muted);
+            } else if (typeof player?._sendCommand === 'function') {
+                player._sendCommand('setMuted', [audioState.muted]);
+            }
+        } catch { }
+        lastKnownAudioState = audioState;
+    }
+
+    function scheduleAudioStateRestore(audioState) {
+        if (!audioState) return;
+        const restoreId = ++audioRestoreToken;
+        let attempts = 0;
+        const maxAttempts = 20;
+        const tryRestore = () => {
+            if (restoreId !== audioRestoreToken) return;
+            attempts++;
+            const playerAndState = getPlayerAndState();
+            applyAudioState(audioState, playerAndState?.player);
+            const restoredAudioState = rememberCurrentAudioState(playerAndState?.player);
+            const volumeMatches = restoredAudioState && Math.abs(restoredAudioState.volume - audioState.volume) < 0.01;
+            const mutedMatches = restoredAudioState && restoredAudioState.muted === audioState.muted;
+            if (attempts >= maxAttempts || (mutedMatches && (audioState.muted || volumeMatches))) {
+                return;
+            }
+            setTimeout(tryRestore, attempts < 5 ? 250 : 500);
+        };
+        setTimeout(tryRestore, 150);
+    }
+
     function doTwitchPlayerTask(isPausePlay, isReload) {
         const playerAndState = getPlayerAndState();
         if (!playerAndState) return;
@@ -1118,6 +1216,7 @@ function initVAFT() {
         const playerState = playerAndState.state;
         if (!player || !playerState) return;
         if (player.isPaused() || player.core?.paused) return;
+        const audioState = rememberCurrentAudioState(player);
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
@@ -1136,9 +1235,9 @@ function initVAFT() {
                 currentQualityLS = localStorage.getItem(lsKeyQuality);
                 currentMutedLS = localStorage.getItem(lsKeyMuted);
                 currentVolumeLS = localStorage.getItem(lsKeyVolume);
-                if (localStorageHookFailed && player?.core?.state) {
-                    localStorage.setItem(lsKeyMuted, JSON.stringify({ default: player.core.state.muted }));
-                    localStorage.setItem(lsKeyVolume, player.core.state.volume);
+                if (localStorageHookFailed && audioState) {
+                    localStorage.setItem(lsKeyMuted, JSON.stringify({ default: audioState.muted }));
+                    localStorage.setItem(lsKeyVolume, audioState.volume);
                 }
                 if (localStorageHookFailed && player?.core?.state?.quality?.group) {
                     localStorage.setItem(lsKeyQuality, JSON.stringify({ default: player.core.state.quality.group }));
@@ -1147,6 +1246,7 @@ function initVAFT() {
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play();
+            scheduleAudioStateRestore(audioState);
             if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
                 setTimeout(() => {
                     try {
@@ -1300,6 +1400,11 @@ function initVAFT() {
         document.addEventListener('visibilitychange', visibilityChange, true);
         document.addEventListener('webkitvisibilitychange', visibilityChange, true);
         document.addEventListener('mozvisibilitychange', visibilityChange, true);
+        document.addEventListener('volumechange', (event) => {
+            if (event.target instanceof HTMLVideoElement) {
+                rememberCurrentAudioState();
+            }
+        }, true);
         document.addEventListener('hasFocus', block, true);
         try {
             if (/Firefox/.test(navigator.userAgent)) {

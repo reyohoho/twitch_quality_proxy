@@ -6,7 +6,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
