@@ -123,6 +123,39 @@ function prepareVaftForInjection() {
     return `${vaftConfig}\n${vaftCode}\ninitVAFT();`;
 }
 
+// Escape code for embedding into a JS template literal
+function escapeForTemplateLiteral(code) {
+    return code
+        .replace(/\\/g, '\\\\')
+        .replace(/`/g, '\\`')
+        .replace(/\$\{/g, '\\${');
+}
+
+// Build a content-script snippet that injects the IRC WS proxy as
+// a <script> tag in the page's MAIN world (used by Firefox MV2,
+// which cannot declare MAIN-world content scripts in the manifest)
+function buildIrcWsProxyInjector() {
+    const ircWsProxyContent = readFile(path.join(SRC_DIR, 'core', 'irc-ws-proxy.js'));
+    const escaped = escapeForTemplateLiteral(ircWsProxyContent);
+
+    return `// ============================================
+// IRC WS Proxy bootstrap (injected into MAIN world)
+// Must run before any Twitch script creates a WebSocket
+// ============================================
+(function injectIrcWsProxy() {
+    try {
+        const script = document.createElement('script');
+        script.textContent = \`${escaped}\`;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    } catch (e) {
+        console.error('[ReYohoho] Failed to inject IRC WS proxy:', e);
+    }
+})();
+
+`;
+}
+
 // Build Firefox extension
 function buildFirefox() {
     console.log('Building Firefox extension...');
@@ -174,7 +207,12 @@ function buildFirefox() {
     
     // Remove module exports
     contentContent = removeModuleExports(contentContent);
-    
+
+    // Prepend IRC WS proxy injector so it runs before Twitch's bundle.
+    // Firefox MV2 can't declare a MAIN-world content script in the manifest,
+    // so we inject a <script> tag at document_start instead.
+    contentContent = buildIrcWsProxyInjector() + contentContent;
+
     writeFile(path.join(firefoxDir, 'content.js'), contentContent);
     
     // Copy styles
@@ -219,6 +257,12 @@ function buildChromium() {
     // Build VAFT as separate file for Chromium (CSP requirement)
     const vaftForFile = prepareVaftForInjection();
     writeFile(path.join(chromiumDir, 'vaft.js'), `(function(){\n${vaftForFile}\n})();`);
+
+    // Copy IRC WebSocket URL rewriter (runs in MAIN world via manifest)
+    copyFile(
+        path.join(SRC_DIR, 'core', 'irc-ws-proxy.js'),
+        path.join(chromiumDir, 'irc-ws-proxy.js')
+    );
     
     // Build content.js
     let contentContent = readFile(path.join(SRC_DIR, 'content.js'));
@@ -262,6 +306,12 @@ function buildUserscript() {
     
     // Read header (contains proxy interceptor and IIFE start)
     let userscript = readFile(path.join(SRC_DIR, 'platform', 'userscript', 'header.js'));
+    userscript += '\n\n';
+
+    // Inline IRC WS proxy. Userscripts with @grant none run in the page's
+    // MAIN world, so the WebSocket wrapper installs directly without any
+    // <script> tag injection.
+    userscript += readFile(path.join(SRC_DIR, 'core', 'irc-ws-proxy.js'));
     userscript += '\n\n';
     
     // Add styles injection (using DOM, not GM_addStyle since we use @grant none)

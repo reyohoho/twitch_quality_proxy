@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.3.0
+// @version      2.4.0
 // @description  Прокси для Twitch с поддержкой 1080p/1440p
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
@@ -40,9 +40,6 @@
         }
         return '';
     }
-
-    // Get current auth token for Worker injection
-    const currentAuthToken = getAuthToken();
 
     // Build full proxy URL
     function buildProxyUrl(originalUrl, proxyUrl) {

@@ -1,4 +1,180 @@
 // ============================================
+// IRC WS Proxy bootstrap (injected into MAIN world)
+// Must run before any Twitch script creates a WebSocket
+// ============================================
+(function injectIrcWsProxy() {
+    try {
+        const script = document.createElement('script');
+        script.textContent = `// ============================================
+// ReYohoho Twitch Proxy - IRC WebSocket URL Rewriter
+// Runs in page MAIN world before any Twitch script,
+// because Chrome's declarativeNetRequest cannot perform
+// cross-origin redirects for WebSocket requests.
+// ============================================
+
+(function () {
+    'use strict';
+
+    const SOURCE_PREFIX = 'wss://irc-ws.chat.twitch.tv';
+    const TARGET_URL = 'wss://ext.rte.net.ru:8443/tw-irc-proxy';
+    const DROP_EVENT = 'reyohoho-irc-proxy-drop';
+
+    // Opt-out flag: defaults to \`true\` when missing/unreadable. Used by
+    // the master extension switch and the cached availability probe.
+    function readOptOutFlag(key) {
+        try {
+            return localStorage.getItem(key) !== 'false';
+        } catch (e) {
+            return true;
+        }
+    }
+
+    // Opt-in flag: only the literal string \`'true'\` counts as enabled.
+    // Used by the IRC-specific user toggle so a fresh install starts
+    // with the IRC rewrite OFF until the user explicitly turns it on.
+    function readOptInFlag(key) {
+        try {
+            return localStorage.getItem(key) === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function isMasterEnabled() {
+        return readOptOutFlag('reyohoho_enabled');
+    }
+
+    // Re-evaluated for every WebSocket construction so toggling either flag
+    // (user setting or cached availability) takes effect on the next
+    // (re)connect without a full page reload.
+    function shouldRewriteNow() {
+        if (!readOptOutFlag('reyohoho_enabled')) return false;
+        if (!readOptInFlag('reyohoho_irc_proxy_enabled')) return false;
+        if (!readOptOutFlag('reyohoho_irc_proxy_available')) return false;
+        return true;
+    }
+
+    // If the master switch is off there's nothing to wire up; turning it
+    // back on requires a reload (handled by the content script) anyway.
+    if (!isMasterEnabled()) {
+        return;
+    }
+
+    const OriginalWebSocket = window.WebSocket;
+    if (!OriginalWebSocket || OriginalWebSocket.__reyohohoPatched) {
+        return;
+    }
+
+    // Track every IRC WebSocket we've seen (proxied OR direct) so we can
+    // close them on demand when the proxy state changes. Twitch's chat
+    // client reconnects after a close, and the new socket gets routed
+    // based on the freshly-read flags.
+    const trackedSockets = new Set();
+
+    function trackIrcSocket(ws) {
+        trackedSockets.add(ws);
+        const cleanup = () => trackedSockets.delete(ws);
+        try {
+            ws.addEventListener('close', cleanup);
+            ws.addEventListener('error', cleanup);
+        } catch (e) {}
+    }
+
+    function dropTrackedSockets(reason) {
+        if (trackedSockets.size === 0) return;
+        const sockets = Array.from(trackedSockets);
+        trackedSockets.clear();
+        console.log('[ReYohoho] Dropping', sockets.length, 'IRC WebSocket(s) for reconnect (reason:', reason, ')');
+        for (const ws of sockets) {
+            try {
+                // 1000 = normal closure; reason string is ignored by Twitch
+                // but useful when watching DevTools.
+                ws.close(1000, 'reyohoho-reconnect');
+            } catch (e) {}
+        }
+    }
+
+    // Returns { url, isIrc } describing how the new socket should be opened.
+    function resolveTarget(url) {
+        try {
+            const urlStr = typeof url === 'string' ? url : String(url);
+            if (urlStr.indexOf(SOURCE_PREFIX) === 0) {
+                if (shouldRewriteNow()) {
+                    console.log('[ReYohoho] IRC WS rewrite:', urlStr, '->', TARGET_URL);
+                    return { url: TARGET_URL, isIrc: true };
+                }
+                console.log('[ReYohoho] IRC WS direct (proxy disabled/unavailable):', urlStr);
+                return { url: url, isIrc: true };
+            }
+        } catch (e) {
+            console.error('[ReYohoho] IRC WS resolve error:', e);
+        }
+        return { url: url, isIrc: false };
+    }
+
+    function PatchedWebSocket(url, protocols) {
+        const target = resolveTarget(url);
+        const ws = protocols === undefined
+            ? new OriginalWebSocket(target.url)
+            : new OriginalWebSocket(target.url, protocols);
+        if (target.isIrc) {
+            trackIrcSocket(ws);
+        }
+        return ws;
+    }
+
+    PatchedWebSocket.prototype = OriginalWebSocket.prototype;
+    PatchedWebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+    PatchedWebSocket.OPEN = OriginalWebSocket.OPEN;
+    PatchedWebSocket.CLOSING = OriginalWebSocket.CLOSING;
+    PatchedWebSocket.CLOSED = OriginalWebSocket.CLOSED;
+    PatchedWebSocket.__reyohohoPatched = true;
+
+    try {
+        Object.setPrototypeOf(PatchedWebSocket, OriginalWebSocket);
+    } catch (e) {}
+
+    try {
+        Object.defineProperty(window, 'WebSocket', {
+            value: PatchedWebSocket,
+            writable: true,
+            configurable: true
+        });
+    } catch (e) {
+        window.WebSocket = PatchedWebSocket;
+    }
+
+    // Bridge: the content script (isolated world / userscript MAIN world)
+    // dispatches this CustomEvent on \`window\` whenever the IRC proxy
+    // toggle or cached availability changes. We close every tracked
+    // IRC socket so Twitch's reconnect logic kicks in and the freshly
+    // constructed socket reads the updated flags.
+    //
+    // Reading \`e.detail.reason\` is wrapped in try/catch because in
+    // Firefox content scripts, the detail object lives in a different
+    // security compartment and may throw "Permission denied" if it
+    // wasn't \`cloneInto()\`d before dispatch. Either way we still drop.
+    window.addEventListener(DROP_EVENT, (e) => {
+        let reason = 'state-change';
+        try {
+            if (e && e.detail && typeof e.detail.reason === 'string') {
+                reason = e.detail.reason;
+            }
+        } catch (err) {}
+        dropTrackedSockets(reason);
+    });
+
+    console.log('[ReYohoho] IRC WebSocket wrapper installed');
+})();
+`;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    } catch (e) {
+        console.error('[ReYohoho] Failed to inject IRC WS proxy:', e);
+    }
+})();
+
+// ============================================
 // ReYohoho Twitch Proxy - Content Script
 // ============================================
 
@@ -25,12 +201,19 @@ const MODES = {
 const PROXY_CHECK_TIMEOUT = 3000;
 const CHECK_INTERVAL = 5000;
 
+// IRC chat WebSocket proxy
+const IRC_PROXY_HOST = 'https://ext.rte.net.ru:8443';
+const IRC_PROXY_TARGET_URL = 'wss://ext.rte.net.ru:8443/tw-irc-proxy';
+const IRC_PROXY_SOURCE_PREFIX = 'wss://irc-ws.chat.twitch.tv';
+const IRC_PROXY_CHECK_INTERVAL = 30000; // 30 seconds
+const IRC_PROXY_CHECK_TIMEOUT = 3000;
+
 // VAFT Configuration
 const VAFT_CONFIG = {
     AdSignifier: 'stitched',
     ClientID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-    BackupPlayerTypes: ['embed', 'popout', 'autoplay'],
-    FallbackPlayerType: 'embed',
+    BackupPlayerTypes: ['site', 'popout', 'mobile_web', 'embed',],
+    FallbackPlayerType: 'site',
     ForceAccessTokenPlayerType: 'popout',
     SkipPlayerReloadOnHevc: false,
     AlwaysReloadPlayerOnAd: false,
@@ -68,8 +251,34 @@ function getStatusText(status) {
     }
 }
 
-function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
-    const { onExtensionToggle, onVaftToggle } = callbacks;
+// Compute display state for the IRC proxy section: respects the user toggle,
+// the cached availability flag, and the master extension switch.
+function getIrcProxyDisplay(extensionEnabled, ircProxy) {
+    const enabled = !!(ircProxy && ircProxy.enabled);
+    const available = !ircProxy || ircProxy.available !== false;
+
+    let badgeStatus;
+    let badgeText;
+    if (!extensionEnabled) {
+        badgeStatus = 'disabled';
+        badgeText = '○ Выключен';
+    } else if (!enabled) {
+        badgeStatus = 'disabled';
+        badgeText = '○ Выключен';
+    } else if (!available) {
+        badgeStatus = 'unavailable';
+        badgeText = '✕ Недоступен (direct)';
+    } else {
+        badgeStatus = 'active';
+        badgeText = '● Активен';
+    }
+
+    return { enabled, available, badgeStatus, badgeText };
+}
+
+function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+    const { onExtensionToggle, onVaftToggle, onIrcProxyToggle } = callbacks;
+    const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
     
     const panel = document.createElement('div');
     panel.className = 'reyohoho-proxy-settings';
@@ -88,6 +297,17 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         </label>
       </div>
       <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
+    </div>
+    <div class="reyohoho-section">
+      <div class="reyohoho-section-header">
+        <span class="reyohoho-section-title">IRC чат прокси</span>
+        <span class="reyohoho-proxy-status reyohoho-irc-status" data-status="${irc.badgeStatus}">${irc.badgeText}</span>
+        <label class="reyohoho-toggle">
+          <input type="checkbox" id="reyohoho-irc-toggle" ${irc.enabled ? 'checked' : ''}>
+          <span class="reyohoho-toggle-slider"></span>
+        </label>
+      </div>
+      <span class="reyohoho-section-desc">Прокси для wss://irc-ws.chat.twitch.tv. Если хост недоступен — используется direct.</span>
     </div>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
@@ -121,6 +341,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         });
     }
 
+    // IRC proxy toggle handler
+    const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
+    if (ircToggle) {
+        ircToggle.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (onIrcProxyToggle) onIrcProxyToggle(e.target.checked);
+        });
+    }
+
     // VAFT toggle handler
     const vaftToggle = panel.querySelector('#reyohoho-vaft-toggle');
     const vaftTestBtn = panel.querySelector('#reyohoho-vaft-test');
@@ -145,7 +374,9 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
     return panel;
 }
 
-function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus) {
+function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy) {
+    const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
+
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
         const extToggle = panel.querySelector('#reyohoho-ext-toggle');
         if (extToggle) {
@@ -155,7 +386,16 @@ function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus) {
         if (vaftToggle) {
             vaftToggle.checked = vaftEnabled;
         }
-        const statusEl = panel.querySelector('.reyohoho-proxy-status');
+        const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
+        if (ircToggle) {
+            ircToggle.checked = irc.enabled;
+        }
+        const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
+        if (ircStatusEl) {
+            ircStatusEl.textContent = irc.badgeText;
+            ircStatusEl.dataset.status = irc.badgeStatus;
+        }
+        const statusEl = panel.querySelector('.reyohoho-header .reyohoho-proxy-status');
         if (statusEl && proxyStatus) {
             statusEl.textContent = getStatusText(proxyStatus.status);
             statusEl.dataset.status = proxyStatus.status;
@@ -163,30 +403,41 @@ function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus) {
     });
 }
 
-function updateProxyStatusInPanels(proxyStatus) {
+function updateProxyStatusInPanels(proxyStatus, ircProxy) {
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
-        const statusEl = panel.querySelector('.reyohoho-proxy-status');
+        const statusEl = panel.querySelector('.reyohoho-header .reyohoho-proxy-status');
         if (statusEl) {
             statusEl.textContent = getStatusText(proxyStatus.status);
             statusEl.dataset.status = proxyStatus.status;
         }
+        if (ircProxy) {
+            // Re-derive against the panel's current extension toggle state.
+            const extToggle = panel.querySelector('#reyohoho-ext-toggle');
+            const extEnabled = extToggle ? extToggle.checked : true;
+            const irc = getIrcProxyDisplay(extEnabled, ircProxy);
+            const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
+            if (ircStatusEl) {
+                ircStatusEl.textContent = irc.badgeText;
+                ircStatusEl.dataset.status = irc.badgeStatus;
+            }
+        }
     });
 }
 
-function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
+function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
     if (!container || container.querySelector('.reyohoho-proxy-settings')) {
         return false;
     }
 
-    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks);
+    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
     container.insertBefore(panel, container.firstChild);
     return true;
 }
 
-function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
+function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
     const settingsMenu = document.querySelector('[data-a-target="player-settings-menu"]');
 
-    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks)) {
+    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy)) {
         console.log('[ReYohoho] Injected into player settings menu');
         return true;
     }
@@ -194,7 +445,7 @@ function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks
     return false;
 }
 
-function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
+function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
 
@@ -206,7 +457,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
         }
 
         if (shouldCheck) {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks);
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
         }
     });
 
@@ -243,6 +494,8 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
     let extensionEnabled = true;
     let vaftEnabled = false;
     let vaftInitialized = false;
+    let ircProxyEnabled = false;
+    let ircProxyAvailable = true;
     let proxyStatus = { status: 'unknown' };
 
     // Check extension enabled synchronously from localStorage
@@ -265,6 +518,25 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
         }
     }
 
+    // IRC chat proxy toggle. Opt-in: only `'true'` enables the rewrite,
+    // everything else (missing, `'false'`, unreadable) means disabled.
+    function isIrcProxyEnabledSync() {
+        try {
+            return localStorage.getItem('reyohoho_irc_proxy_enabled') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Last known reachability of the IRC proxy host (defaults to true)
+    function isIrcProxyAvailableSync() {
+        try {
+            return localStorage.getItem('reyohoho_irc_proxy_available') !== 'false';
+        } catch (e) {
+            return true;
+        }
+    }
+
     // Save extension state to localStorage for sync access
     function saveExtensionToLocalStorage(enabled) {
         try {
@@ -276,6 +548,18 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
     function saveVaftToLocalStorage(enabled) {
         try {
             localStorage.setItem('reyohoho_vaft_enabled', enabled ? 'true' : 'false');
+        } catch (e) {}
+    }
+
+    function saveIrcProxyEnabledToLocalStorage(enabled) {
+        try {
+            localStorage.setItem('reyohoho_irc_proxy_enabled', enabled ? 'true' : 'false');
+        } catch (e) {}
+    }
+
+    function saveIrcProxyAvailableToLocalStorage(available) {
+        try {
+            localStorage.setItem('reyohoho_irc_proxy_available', available ? 'true' : 'false');
         } catch (e) {}
     }
 
@@ -291,8 +575,8 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
             script.textContent = `const VAFT_CONFIG = {
     AdSignifier: 'stitched',
     ClientID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-    BackupPlayerTypes: ['embed', 'popout', 'autoplay'],
-    FallbackPlayerType: 'embed',
+    BackupPlayerTypes: ['site', 'popout', 'mobile_web', 'embed',],
+    FallbackPlayerType: 'site',
     ForceAccessTokenPlayerType: 'popout',
     SkipPlayerReloadOnHevc: false,
     AlwaysReloadPlayerOnAd: false,
@@ -1484,7 +1768,7 @@ initVAFT();`;
     // Load settings
     async function loadSettings() {
         try {
-            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled']);
+            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled']);
             
             if (typeof result.extensionEnabled === 'boolean') {
                 extensionEnabled = result.extensionEnabled;
@@ -1502,8 +1786,18 @@ initVAFT();`;
                     injectVAFT();
                 }
             }
+
+            if (typeof result.ircProxyEnabled === 'boolean') {
+                ircProxyEnabled = result.ircProxyEnabled;
+                saveIrcProxyEnabledToLocalStorage(ircProxyEnabled);
+            } else {
+                ircProxyEnabled = isIrcProxyEnabledSync();
+            }
+
+            // Last known availability (refreshed by checkIrcProxyAvailability)
+            ircProxyAvailable = isIrcProxyAvailableSync();
             
-            console.log(`[ReYohoho] Loaded settings: enabled=${extensionEnabled}, vaft=${vaftEnabled}`);
+            console.log(`[ReYohoho] Loaded settings: enabled=${extensionEnabled}, vaft=${vaftEnabled}, ircProxy=${ircProxyEnabled} (available=${ircProxyAvailable})`);
         } catch (e) {
             console.error('[ReYohoho] Error loading settings:', e);
         }
@@ -1545,10 +1839,90 @@ initVAFT();`;
         }
     }
 
+    // Notify the MAIN-world WebSocket wrapper (irc-ws-proxy.js) that it
+    // should close every tracked IRC socket so Twitch's chat client
+    // reconnects and the new socket re-reads the proxy flags.
+    //
+    // Firefox isolates content-script objects with Xray vision: a plain
+    // detail object created here is opaque to MAIN-world listeners and
+    // throws "Permission denied to access property" when they try to
+    // read it. `cloneInto(detail, window)` (Firefox-only helper) lifts
+    // the object into the page compartment. Chromium and Tampermonkey
+    // (with @grant none) don't expose `cloneInto` and don't need it.
+    function dispatchIrcProxyDrop(reason) {
+        try {
+            const rawDetail = { reason: reason || 'state-change' };
+            const detail = (typeof cloneInto === 'function')
+                ? cloneInto(rawDetail, window)
+                : rawDetail;
+            window.dispatchEvent(new CustomEvent('reyohoho-irc-proxy-drop', { detail }));
+        } catch (e) {
+            console.error('[ReYohoho] Failed to dispatch IRC drop event:', e);
+        }
+    }
+
+    // Save IRC proxy state. No reload needed: the wrapper picks up the
+    // new flag on the next WebSocket construction, and we drop the
+    // active socket(s) here so reconnect happens immediately.
+    async function saveIrcProxyEnabled(enabled) {
+        ircProxyEnabled = enabled;
+        try {
+            await storageAdapter.set({ ircProxyEnabled: enabled });
+            saveIrcProxyEnabledToLocalStorage(enabled);
+            console.log(`[ReYohoho] IRC proxy ${enabled ? 'enabled' : 'disabled'}`);
+            dispatchIrcProxyDrop(enabled ? 'toggle-on' : 'toggle-off');
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+        } catch (e) {
+            console.error('[ReYohoho] Error saving IRC proxy state:', e);
+        }
+    }
+
+    // Probe the IRC proxy host with a HEAD request. We use no-cors because
+    // the upstream doesn't return CORS headers; an opaque success response
+    // is enough to know the host is reachable, and any network failure
+    // (DNS, TLS, timeout) flips the cached availability flag to false so
+    // active sockets get dropped and Twitch reconnects via direct.
+    async function checkIrcProxyAvailability() {
+        const probeUrl = (typeof IRC_PROXY_HOST !== 'undefined' ? IRC_PROXY_HOST : 'https://ext.rte.net.ru:8443') + '/';
+        const timeoutMs = typeof IRC_PROXY_CHECK_TIMEOUT !== 'undefined' ? IRC_PROXY_CHECK_TIMEOUT : 3000;
+
+        let available = false;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            await fetch(probeUrl, {
+                method: 'HEAD',
+                mode: 'no-cors',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            available = true;
+        } catch (e) {
+            available = false;
+            console.warn('[ReYohoho] IRC proxy host unreachable, falling back to direct:', e.name || e.message);
+        }
+
+        const previous = ircProxyAvailable;
+        ircProxyAvailable = available;
+        saveIrcProxyAvailableToLocalStorage(available);
+
+        if (available !== previous) {
+            console.log(`[ReYohoho] IRC proxy availability changed: ${available ? 'reachable' : 'unreachable'}`);
+            // Only drop sockets when the user wants the proxy on; otherwise
+            // they're already on the correct (direct) route.
+            if (ircProxyEnabled) {
+                dispatchIrcProxyDrop(available ? 'available' : 'unavailable');
+            }
+        }
+        return available;
+    }
+
     // UI Callbacks
     const callbacks = {
         onExtensionToggle: saveExtensionEnabled,
-        onVaftToggle: saveVaftEnabled
+        onVaftToggle: saveVaftEnabled,
+        onIrcProxyToggle: saveIrcProxyEnabled
     };
 
     // Get proxy status from background script (extensions)
@@ -1582,21 +1956,37 @@ initVAFT();`;
     }
 
 
+    // Build the snapshot of IRC-proxy state that the UI panel renders.
+    function ircProxyState() {
+        return { enabled: ircProxyEnabled, available: ircProxyAvailable };
+    }
+
     // Initialize UI injection
     function initUI() {
         // Start observer for settings menu
-        startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks);
+        startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState());
         
         // Periodic check
         setInterval(() => {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks);
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState());
         }, 500);
         
         // Periodic status update
         setInterval(async () => {
             await fetchProxyStatus();
-            updateProxyStatusInPanels(proxyStatus);
+            updateProxyStatusInPanels(proxyStatus, ircProxyState());
         }, 5000);
+
+        // Periodic IRC proxy availability probe. Runs once immediately so
+        // the cached flag reflects current reality on a fresh page load.
+        const ircInterval = typeof IRC_PROXY_CHECK_INTERVAL !== 'undefined' ? IRC_PROXY_CHECK_INTERVAL : 30000;
+        checkIrcProxyAvailability().then(() => {
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+        });
+        setInterval(async () => {
+            await checkIrcProxyAvailability();
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+        }, ircInterval);
     }
 
     // Listen for storage changes (extensions)
@@ -1605,11 +1995,20 @@ initVAFT();`;
             if (namespace === 'local') {
                 if (changes.extensionEnabled) {
                     extensionEnabled = changes.extensionEnabled.newValue;
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
                 }
                 if (changes.vaftEnabled) {
                     vaftEnabled = changes.vaftEnabled.newValue;
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+                }
+                if (changes.ircProxyEnabled) {
+                    ircProxyEnabled = changes.ircProxyEnabled.newValue;
+                    saveIrcProxyEnabledToLocalStorage(ircProxyEnabled);
+                    // Mirror the local toggle path so other tabs also drop
+                    // their active IRC sockets and reconnect via the new
+                    // route without requiring a manual reload.
+                    dispatchIrcProxyDrop(ircProxyEnabled ? 'toggle-on-sync' : 'toggle-off-sync');
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
                 }
             }
         });

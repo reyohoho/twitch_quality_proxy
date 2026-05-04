@@ -2,8 +2,8 @@
 const VAFT_CONFIG = {
     AdSignifier: 'stitched',
     ClientID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-    BackupPlayerTypes: ['embed', 'popout', 'autoplay'],
-    FallbackPlayerType: 'embed',
+    BackupPlayerTypes: ['site', 'popout', 'mobile_web', 'embed',],
+    FallbackPlayerType: 'site',
     ForceAccessTokenPlayerType: 'popout',
     SkipPlayerReloadOnHevc: false,
     AlwaysReloadPlayerOnAd: false,

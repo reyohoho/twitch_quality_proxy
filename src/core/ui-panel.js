@@ -16,8 +16,34 @@ function getStatusText(status) {
     }
 }
 
-function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
-    const { onExtensionToggle, onVaftToggle } = callbacks;
+// Compute display state for the IRC proxy section: respects the user toggle,
+// the cached availability flag, and the master extension switch.
+function getIrcProxyDisplay(extensionEnabled, ircProxy) {
+    const enabled = !!(ircProxy && ircProxy.enabled);
+    const available = !ircProxy || ircProxy.available !== false;
+
+    let badgeStatus;
+    let badgeText;
+    if (!extensionEnabled) {
+        badgeStatus = 'disabled';
+        badgeText = '○ Выключен';
+    } else if (!enabled) {
+        badgeStatus = 'disabled';
+        badgeText = '○ Выключен';
+    } else if (!available) {
+        badgeStatus = 'unavailable';
+        badgeText = '✕ Недоступен (direct)';
+    } else {
+        badgeStatus = 'active';
+        badgeText = '● Активен';
+    }
+
+    return { enabled, available, badgeStatus, badgeText };
+}
+
+function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+    const { onExtensionToggle, onVaftToggle, onIrcProxyToggle } = callbacks;
+    const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
     
     const panel = document.createElement('div');
     panel.className = 'reyohoho-proxy-settings';
@@ -36,6 +62,17 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         </label>
       </div>
       <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
+    </div>
+    <div class="reyohoho-section">
+      <div class="reyohoho-section-header">
+        <span class="reyohoho-section-title">IRC чат прокси</span>
+        <span class="reyohoho-proxy-status reyohoho-irc-status" data-status="${irc.badgeStatus}">${irc.badgeText}</span>
+        <label class="reyohoho-toggle">
+          <input type="checkbox" id="reyohoho-irc-toggle" ${irc.enabled ? 'checked' : ''}>
+          <span class="reyohoho-toggle-slider"></span>
+        </label>
+      </div>
+      <span class="reyohoho-section-desc">Прокси для wss://irc-ws.chat.twitch.tv. Если хост недоступен — используется direct.</span>
     </div>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
@@ -69,6 +106,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         });
     }
 
+    // IRC proxy toggle handler
+    const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
+    if (ircToggle) {
+        ircToggle.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (onIrcProxyToggle) onIrcProxyToggle(e.target.checked);
+        });
+    }
+
     // VAFT toggle handler
     const vaftToggle = panel.querySelector('#reyohoho-vaft-toggle');
     const vaftTestBtn = panel.querySelector('#reyohoho-vaft-test');
@@ -93,7 +139,9 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
     return panel;
 }
 
-function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus) {
+function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy) {
+    const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
+
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
         const extToggle = panel.querySelector('#reyohoho-ext-toggle');
         if (extToggle) {
@@ -103,7 +151,16 @@ function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus) {
         if (vaftToggle) {
             vaftToggle.checked = vaftEnabled;
         }
-        const statusEl = panel.querySelector('.reyohoho-proxy-status');
+        const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
+        if (ircToggle) {
+            ircToggle.checked = irc.enabled;
+        }
+        const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
+        if (ircStatusEl) {
+            ircStatusEl.textContent = irc.badgeText;
+            ircStatusEl.dataset.status = irc.badgeStatus;
+        }
+        const statusEl = panel.querySelector('.reyohoho-header .reyohoho-proxy-status');
         if (statusEl && proxyStatus) {
             statusEl.textContent = getStatusText(proxyStatus.status);
             statusEl.dataset.status = proxyStatus.status;
@@ -111,30 +168,41 @@ function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus) {
     });
 }
 
-function updateProxyStatusInPanels(proxyStatus) {
+function updateProxyStatusInPanels(proxyStatus, ircProxy) {
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
-        const statusEl = panel.querySelector('.reyohoho-proxy-status');
+        const statusEl = panel.querySelector('.reyohoho-header .reyohoho-proxy-status');
         if (statusEl) {
             statusEl.textContent = getStatusText(proxyStatus.status);
             statusEl.dataset.status = proxyStatus.status;
         }
+        if (ircProxy) {
+            // Re-derive against the panel's current extension toggle state.
+            const extToggle = panel.querySelector('#reyohoho-ext-toggle');
+            const extEnabled = extToggle ? extToggle.checked : true;
+            const irc = getIrcProxyDisplay(extEnabled, ircProxy);
+            const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
+            if (ircStatusEl) {
+                ircStatusEl.textContent = irc.badgeText;
+                ircStatusEl.dataset.status = irc.badgeStatus;
+            }
+        }
     });
 }
 
-function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
+function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
     if (!container || container.querySelector('.reyohoho-proxy-settings')) {
         return false;
     }
 
-    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks);
+    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
     container.insertBefore(panel, container.firstChild);
     return true;
 }
 
-function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
+function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
     const settingsMenu = document.querySelector('[data-a-target="player-settings-menu"]');
 
-    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks)) {
+    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy)) {
         console.log('[ReYohoho] Injected into player settings menu');
         return true;
     }
@@ -142,7 +210,7 @@ function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks
     return false;
 }
 
-function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
+function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
 
@@ -154,7 +222,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
         }
 
         if (shouldCheck) {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks);
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
         }
     });
 
@@ -170,6 +238,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { 
         getStatusText,
+        getIrcProxyDisplay,
         createSettingsPanel, 
         updateAllPanels,
         updateProxyStatusInPanels,

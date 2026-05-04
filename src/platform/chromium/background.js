@@ -67,7 +67,7 @@ async function updateProxyRules(enable, proxyUrl) {
                                 "media"
                             ],
                         },
-                    },
+                    }
                 ],
             });
             rulesActive = true;
