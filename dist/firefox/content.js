@@ -182,7 +182,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -475,10 +475,17 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
 (function() {
     'use strict';
 
-    // Detect environment
+    // Detect environment.
+    //
+    // Firefox userscripts (MAIN world) expose neither `browser` nor `chrome`,
+    // so we MUST `typeof`-guard both sides — referencing an undeclared
+    // identifier would throw `ReferenceError` in strict mode and abort the
+    // entire IIFE, which is what was breaking the userscript UI.
     const isUserscript = typeof window.__REYOHOHO_USERSCRIPT__ !== 'undefined';
     const isExtension = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
-    const api = (typeof browser !== 'undefined' ? browser : chrome) || null;
+    const api = (typeof browser !== 'undefined')
+        ? browser
+        : (typeof chrome !== 'undefined' ? chrome : null);
 
     // Storage adapter
     const storageAdapter = isUserscript ? window.__REYOHOHO_STORAGE__ : {
