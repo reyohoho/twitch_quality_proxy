@@ -10,15 +10,19 @@ let currentProxyUrl = null;
 let proxyStatus = 'unknown';
 let rulesActive = false;
 let extensionEnabled = true;
+let hideAudioOnlyEnabled = false;
 
 // Load extension enabled state
 async function loadExtensionState() {
     try {
-        const result = await chrome.storage.local.get(['extensionEnabled']);
+        const result = await chrome.storage.local.get(['extensionEnabled', 'hideAudioOnlyEnabled']);
         if (typeof result.extensionEnabled === 'boolean') {
             extensionEnabled = result.extensionEnabled;
         }
-        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}`);
+        if (typeof result.hideAudioOnlyEnabled === 'boolean') {
+            hideAudioOnlyEnabled = result.hideAudioOnlyEnabled;
+        }
+        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}, hideAudioOnly: ${hideAudioOnlyEnabled}`);
     } catch (e) {
         console.error('[ReYohoho] Error loading extension state:', e);
     }
@@ -47,6 +51,12 @@ async function updateProxyRules(enable, proxyUrl) {
                 console.error("[ReYohoho] Error retrieving auth token:", error);
             }
 
+            // usher.ttvnw.net URLs always carry a query string (token, sig,
+            // ...), so an extra "&hide_audio_only=true" is always safe to
+            // append. The proxy reads it before forwarding to Twitch and
+            // strips audio_only entries from the master playlist.
+            const hideAudioOnlyParam = hideAudioOnlyEnabled ? "&hide_audio_only=true" : "";
+
             await chrome.declarativeNetRequest.updateDynamicRules({
                 removeRuleIds: existingRuleIds,
                 addRules: [
@@ -56,7 +66,7 @@ async function updateProxyRules(enable, proxyUrl) {
                         action: {
                             type: "redirect",
                             redirect: {
-                                regexSubstitution: proxyUrl + "\\0" + authParam,
+                                regexSubstitution: proxyUrl + "\\0" + authParam + hideAudioOnlyParam,
                             },
                         },
                         condition: {
@@ -71,7 +81,7 @@ async function updateProxyRules(enable, proxyUrl) {
                 ],
             });
             rulesActive = true;
-            console.log(`[ReYohoho] Proxy rules enabled with ${proxyUrl}`);
+            console.log(`[ReYohoho] Proxy rules enabled with ${proxyUrl} (hideAudioOnly=${hideAudioOnlyEnabled})`);
         } else {
             await chrome.declarativeNetRequest.updateDynamicRules({
                 removeRuleIds: existingRuleIds,
@@ -143,10 +153,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Storage change listener
 chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.extensionEnabled) {
+    if (namespace !== 'local') return;
+    if (changes.extensionEnabled) {
         extensionEnabled = changes.extensionEnabled.newValue;
         lastCheckTime = 0;
         checkAndUpdateProxy();
+    }
+    if (changes.hideAudioOnlyEnabled) {
+        hideAudioOnlyEnabled = changes.hideAudioOnlyEnabled.newValue === true;
+        // Refresh the DNR rule with the new query param. We deliberately
+        // keep currentProxyUrl as-is to avoid an unnecessary proxy probe.
+        if (extensionEnabled && currentProxyUrl) {
+            updateProxyRules(true, currentProxyUrl);
+        }
     }
 });
 

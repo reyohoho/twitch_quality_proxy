@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.4.0
-// @description  Прокси для Twitch с поддержкой 1080p/1440p
+// @version      2.4.1
+// @description  Прокси для Twitch с поддержкой 1080p/1440p; опция «Скрыть Audio Only» в настройках плеера
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
 // @match        https://twitch.tv/*
@@ -28,6 +28,35 @@
     // Get saved settings from localStorage
     const savedProxy = localStorage.getItem('reyohoho_proxy_url') || PROXY_SERVERS[0];
     const extensionEnabled = localStorage.getItem('reyohoho_enabled') !== 'false'; // Default true
+    // Hide audio_only: sync key `reyohoho_hide_audio_only` is what the UI
+    // writes before reload. The userscript storage adapter also keeps
+    // `reyohoho_hideAudioOnlyEnabled` (JSON). Content script may migrate JSON
+    // → sync after this header starts, so never cache a single parse-time
+    // boolean — re-read on each usher rewrite and when patching Workers.
+    function getHideAudioOnly() {
+        try {
+            const sync = localStorage.getItem('reyohoho_hide_audio_only');
+            if (sync === 'true') return true;
+            if (sync === 'false') return false;
+            const jsonRaw = localStorage.getItem('reyohoho_hideAudioOnlyEnabled');
+            if (jsonRaw != null) {
+                const v = JSON.parse(jsonRaw);
+                if (v === true) {
+                    try {
+                        localStorage.setItem('reyohoho_hide_audio_only', 'true');
+                    } catch (e) { }
+                    return true;
+                }
+                if (v === false) {
+                    try {
+                        localStorage.setItem('reyohoho_hide_audio_only', 'false');
+                    } catch (e) { }
+                    return false;
+                }
+            }
+        } catch (e) { }
+        return false;
+    }
 
     // Get auth token from cookies
     function getAuthToken() {
@@ -47,6 +76,9 @@
         const authToken = getAuthToken();
         if (authToken) {
             result += (originalUrl.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(authToken);
+        }
+        if (getHideAudioOnly()) {
+            result += (result.includes('?') ? '&' : '?') + 'hide_audio_only=true';
         }
         return result;
     }
@@ -73,11 +105,13 @@
             // Inject proxy code into worker
             // Re-read auth token at Worker creation time (may have changed since page load)
             const authTokenNow = getAuthToken();
+            const hideAudioOnlyForWorker = getHideAudioOnly();
 
             const proxyCode = `
                 (function() {
                     const PROXY_URL = '${savedProxy}';
                     const AUTH_TOKEN = '${authTokenNow}';
+                    const HIDE_AUDIO_ONLY = ${hideAudioOnlyForWorker ? 'true' : 'false'};
                     
                     function replaceUrl(url) {
                         if (typeof url === 'string' && url.includes('usher.ttvnw.net')) {
@@ -85,6 +119,9 @@
                             // Add auth token if available
                             if (AUTH_TOKEN) {
                                 newUrl += (url.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(AUTH_TOKEN);
+                            }
+                            if (HIDE_AUDIO_ONLY) {
+                                newUrl += (newUrl.includes('?') ? '&' : '?') + 'hide_audio_only=true';
                             }
                             console.log('[ReYohoho Worker] Redirecting:', url.substring(0, 60) + '...');
                             // Notify main thread about intercept
@@ -194,7 +231,7 @@
         return originalXHROpen.call(this, method, url, ...rest);
     };
 
-    console.log('[ReYohoho] Proxy userscript loaded (proxy: ' + savedProxy + ', enabled: ' + extensionEnabled + ')');
+    console.log('[ReYohoho] Proxy userscript loaded (proxy: ' + savedProxy + ', enabled: ' + extensionEnabled + ', hideAudioOnly: ' + getHideAudioOnly() + ')');
 
     // ============================================
     // STORAGE ADAPTER (for UI compatibility)

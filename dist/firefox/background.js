@@ -8,7 +8,7 @@ const api = typeof browser !== 'undefined' ? browser : chrome;
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.4.0';
+const VERSION = '2.4.1';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -84,15 +84,19 @@ let proxyStatus = 'unknown';
 let lastInterceptTime = 0;
 let interceptCount = 0;
 let extensionEnabled = true;
+let hideAudioOnlyEnabled = false;
 
 // Load extension enabled state
 async function loadExtensionState() {
     try {
-        const result = await api.storage.local.get(['extensionEnabled']);
+        const result = await api.storage.local.get(['extensionEnabled', 'hideAudioOnlyEnabled']);
         if (typeof result.extensionEnabled === 'boolean') {
             extensionEnabled = result.extensionEnabled;
         }
-        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}`);
+        if (typeof result.hideAudioOnlyEnabled === 'boolean') {
+            hideAudioOnlyEnabled = result.hideAudioOnlyEnabled;
+        }
+        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}, hideAudioOnly: ${hideAudioOnlyEnabled}`);
     } catch (e) {
         console.error('[ReYohoho] Error loading extension state:', e);
     }
@@ -152,8 +156,11 @@ function createProxyListener(authToken = "") {
         console.log("[ReYohoho] Proxy listener triggered for:", details.url);
         const originalUrl = details.url;
         const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
-        const redirectUrl = proxyUrl + originalUrl + authToken;
-        console.log(`[ReYohoho] Using proxy: ${proxyUrl}`);
+        // Read the live toggle each time so a UI change applies on the
+        // very next request without re-installing the listener.
+        const hideAudioOnlyParam = hideAudioOnlyEnabled ? "&hide_audio_only=true" : "";
+        const redirectUrl = proxyUrl + originalUrl + authToken + hideAudioOnlyParam;
+        console.log(`[ReYohoho] Using proxy: ${proxyUrl} (hideAudioOnly=${hideAudioOnlyEnabled})`);
         
         // Track successful intercept
         lastInterceptTime = Date.now();
@@ -276,10 +283,16 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Storage change listener
 api.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.extensionEnabled) {
+    if (namespace !== 'local') return;
+    if (changes.extensionEnabled) {
         extensionEnabled = changes.extensionEnabled.newValue;
         lastCheckTime = 0;
         checkAndUpdateProxy();
+    }
+    if (changes.hideAudioOnlyEnabled) {
+        hideAudioOnlyEnabled = changes.hideAudioOnlyEnabled.newValue === true;
+        // No need to re-install the listener: it reads
+        // hideAudioOnlyEnabled at request time.
     }
 });
 

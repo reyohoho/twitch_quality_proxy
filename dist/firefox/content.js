@@ -182,7 +182,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.4.0';
+const VERSION = '2.4.1';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -276,9 +276,10 @@ function getIrcProxyDisplay(extensionEnabled, ircProxy) {
     return { enabled, available, badgeStatus, badgeText };
 }
 
-function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
-    const { onExtensionToggle, onVaftToggle, onIrcProxyToggle } = callbacks;
+function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
+    const { onExtensionToggle, onVaftToggle, onIrcProxyToggle, onHideAudioOnlyToggle } = callbacks;
     const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
+    const hideAudioOnlyEnabled = hideAudioOnly === true;
     
     const panel = document.createElement('div');
     panel.className = 'reyohoho-proxy-settings';
@@ -297,6 +298,16 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         </label>
       </div>
       <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
+    </div>
+    <div class="reyohoho-section">
+      <div class="reyohoho-section-header">
+        <span class="reyohoho-section-title">Скрыть Audio Only</span>
+        <label class="reyohoho-toggle">
+          <input type="checkbox" id="reyohoho-audio-only-toggle" ${hideAudioOnlyEnabled ? 'checked' : ''}>
+          <span class="reyohoho-toggle-slider"></span>
+        </label>
+      </div>
+      <span class="reyohoho-section-desc">Удалять audio_only вариант из плейлиста</span>
     </div>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
@@ -350,6 +361,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         });
     }
 
+    // Audio Only hide toggle handler
+    const audioOnlyToggle = panel.querySelector('#reyohoho-audio-only-toggle');
+    if (audioOnlyToggle) {
+        audioOnlyToggle.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (onHideAudioOnlyToggle) onHideAudioOnlyToggle(e.target.checked);
+        });
+    }
+
     // VAFT toggle handler
     const vaftToggle = panel.querySelector('#reyohoho-vaft-toggle');
     const vaftTestBtn = panel.querySelector('#reyohoho-vaft-test');
@@ -374,8 +394,9 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
     return panel;
 }
 
-function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy) {
+function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy, hideAudioOnly) {
     const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
+    const hideAudioOnlyEnabled = hideAudioOnly === true;
 
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
         const extToggle = panel.querySelector('#reyohoho-ext-toggle');
@@ -389,6 +410,10 @@ function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy) {
         const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
         if (ircToggle) {
             ircToggle.checked = irc.enabled;
+        }
+        const audioOnlyToggle = panel.querySelector('#reyohoho-audio-only-toggle');
+        if (audioOnlyToggle) {
+            audioOnlyToggle.checked = hideAudioOnlyEnabled;
         }
         const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
         if (ircStatusEl) {
@@ -424,20 +449,20 @@ function updateProxyStatusInPanels(proxyStatus, ircProxy) {
     });
 }
 
-function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
     if (!container || container.querySelector('.reyohoho-proxy-settings')) {
         return false;
     }
 
-    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
+    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly);
     container.insertBefore(panel, container.firstChild);
     return true;
 }
 
-function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
     const settingsMenu = document.querySelector('[data-a-target="player-settings-menu"]');
 
-    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy)) {
+    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly)) {
         console.log('[ReYohoho] Injected into player settings menu');
         return true;
     }
@@ -445,7 +470,7 @@ function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks
     return false;
 }
 
-function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
 
@@ -457,7 +482,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
         }
 
         if (shouldCheck) {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly);
         }
     });
 
@@ -503,6 +528,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
     let vaftInitialized = false;
     let ircProxyEnabled = false;
     let ircProxyAvailable = true;
+    let hideAudioOnlyEnabled = false;
     let proxyStatus = { status: 'unknown' };
 
     // Check extension enabled synchronously from localStorage
@@ -544,6 +570,17 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
         }
     }
 
+    // Hide audio_only quality from the master playlist. Default is OFF
+    // (audio_only stays visible like vanilla Twitch); user opts in via the
+    // UI toggle. Only the literal string 'true' counts as enabled.
+    function isHideAudioOnlyEnabledSync() {
+        try {
+            return localStorage.getItem('reyohoho_hide_audio_only') === 'true';
+        } catch (e) {
+            return false;
+        }
+    }
+
     // Save extension state to localStorage for sync access
     function saveExtensionToLocalStorage(enabled) {
         try {
@@ -567,6 +604,12 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
     function saveIrcProxyAvailableToLocalStorage(available) {
         try {
             localStorage.setItem('reyohoho_irc_proxy_available', available ? 'true' : 'false');
+        } catch (e) {}
+    }
+
+    function saveHideAudioOnlyToLocalStorage(enabled) {
+        try {
+            localStorage.setItem('reyohoho_hide_audio_only', enabled ? 'true' : 'false');
         } catch (e) {}
     }
 
@@ -1775,7 +1818,7 @@ initVAFT();`;
     // Load settings
     async function loadSettings() {
         try {
-            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled']);
+            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled', 'hideAudioOnlyEnabled']);
             
             if (typeof result.extensionEnabled === 'boolean') {
                 extensionEnabled = result.extensionEnabled;
@@ -1801,10 +1844,17 @@ initVAFT();`;
                 ircProxyEnabled = isIrcProxyEnabledSync();
             }
 
+            if (typeof result.hideAudioOnlyEnabled === 'boolean') {
+                hideAudioOnlyEnabled = result.hideAudioOnlyEnabled;
+                saveHideAudioOnlyToLocalStorage(hideAudioOnlyEnabled);
+            } else {
+                hideAudioOnlyEnabled = isHideAudioOnlyEnabledSync();
+            }
+
             // Last known availability (refreshed by checkIrcProxyAvailability)
             ircProxyAvailable = isIrcProxyAvailableSync();
             
-            console.log(`[ReYohoho] Loaded settings: enabled=${extensionEnabled}, vaft=${vaftEnabled}, ircProxy=${ircProxyEnabled} (available=${ircProxyAvailable})`);
+            console.log(`[ReYohoho] Loaded settings: enabled=${extensionEnabled}, vaft=${vaftEnabled}, ircProxy=${ircProxyEnabled} (available=${ircProxyAvailable}), hideAudioOnly=${hideAudioOnlyEnabled}`);
         } catch (e) {
             console.error('[ReYohoho] Error loading settings:', e);
         }
@@ -1865,6 +1915,23 @@ initVAFT();`;
             window.dispatchEvent(new CustomEvent('reyohoho-irc-proxy-drop', { detail }));
         } catch (e) {
             console.error('[ReYohoho] Failed to dispatch IRC drop event:', e);
+        }
+    }
+
+    // Save "hide audio_only" toggle. The proxy URL passed via background
+    // (DNR/webRequest) bakes in the &hide_audio_only param, and the
+    // userscript reads localStorage at script-load time. In all cases the
+    // active player has already cached its master playlist, so we reload
+    // to make Twitch refetch with the new flag.
+    async function saveHideAudioOnlyEnabled(enabled) {
+        hideAudioOnlyEnabled = enabled;
+        try {
+            await storageAdapter.set({ hideAudioOnlyEnabled: enabled });
+            saveHideAudioOnlyToLocalStorage(enabled);
+            console.log(`[ReYohoho] Hide audio_only ${enabled ? 'enabled' : 'disabled'}`);
+            location.reload();
+        } catch (e) {
+            console.error('[ReYohoho] Error saving hideAudioOnly state:', e);
         }
     }
 
@@ -1929,7 +1996,8 @@ initVAFT();`;
     const callbacks = {
         onExtensionToggle: saveExtensionEnabled,
         onVaftToggle: saveVaftEnabled,
-        onIrcProxyToggle: saveIrcProxyEnabled
+        onIrcProxyToggle: saveIrcProxyEnabled,
+        onHideAudioOnlyToggle: saveHideAudioOnlyEnabled
     };
 
     // Get proxy status from background script (extensions)
@@ -1971,11 +2039,11 @@ initVAFT();`;
     // Initialize UI injection
     function initUI() {
         // Start observer for settings menu
-        startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState());
+        startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState(), hideAudioOnlyEnabled);
         
         // Periodic check
         setInterval(() => {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState());
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState(), hideAudioOnlyEnabled);
         }, 500);
         
         // Periodic status update
@@ -1988,11 +2056,11 @@ initVAFT();`;
         // the cached flag reflects current reality on a fresh page load.
         const ircInterval = typeof IRC_PROXY_CHECK_INTERVAL !== 'undefined' ? IRC_PROXY_CHECK_INTERVAL : 30000;
         checkIrcProxyAvailability().then(() => {
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
         });
         setInterval(async () => {
             await checkIrcProxyAvailability();
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
         }, ircInterval);
     }
 
@@ -2002,11 +2070,11 @@ initVAFT();`;
             if (namespace === 'local') {
                 if (changes.extensionEnabled) {
                     extensionEnabled = changes.extensionEnabled.newValue;
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
                 }
                 if (changes.vaftEnabled) {
                     vaftEnabled = changes.vaftEnabled.newValue;
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
                 }
                 if (changes.ircProxyEnabled) {
                     ircProxyEnabled = changes.ircProxyEnabled.newValue;
@@ -2015,7 +2083,12 @@ initVAFT();`;
                     // their active IRC sockets and reconnect via the new
                     // route without requiring a manual reload.
                     dispatchIrcProxyDrop(ircProxyEnabled ? 'toggle-on-sync' : 'toggle-off-sync');
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+                }
+                if (changes.hideAudioOnlyEnabled) {
+                    hideAudioOnlyEnabled = changes.hideAudioOnlyEnabled.newValue;
+                    saveHideAudioOnlyToLocalStorage(hideAudioOnlyEnabled);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
                 }
             }
         });

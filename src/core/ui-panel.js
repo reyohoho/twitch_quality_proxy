@@ -41,9 +41,10 @@ function getIrcProxyDisplay(extensionEnabled, ircProxy) {
     return { enabled, available, badgeStatus, badgeText };
 }
 
-function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
-    const { onExtensionToggle, onVaftToggle, onIrcProxyToggle } = callbacks;
+function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
+    const { onExtensionToggle, onVaftToggle, onIrcProxyToggle, onHideAudioOnlyToggle } = callbacks;
     const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
+    const hideAudioOnlyEnabled = hideAudioOnly === true;
     
     const panel = document.createElement('div');
     panel.className = 'reyohoho-proxy-settings';
@@ -62,6 +63,16 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         </label>
       </div>
       <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
+    </div>
+    <div class="reyohoho-section">
+      <div class="reyohoho-section-header">
+        <span class="reyohoho-section-title">Скрыть Audio Only</span>
+        <label class="reyohoho-toggle">
+          <input type="checkbox" id="reyohoho-audio-only-toggle" ${hideAudioOnlyEnabled ? 'checked' : ''}>
+          <span class="reyohoho-toggle-slider"></span>
+        </label>
+      </div>
+      <span class="reyohoho-section-desc">Удалять audio_only вариант из плейлиста</span>
     </div>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
@@ -115,6 +126,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         });
     }
 
+    // Audio Only hide toggle handler
+    const audioOnlyToggle = panel.querySelector('#reyohoho-audio-only-toggle');
+    if (audioOnlyToggle) {
+        audioOnlyToggle.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (onHideAudioOnlyToggle) onHideAudioOnlyToggle(e.target.checked);
+        });
+    }
+
     // VAFT toggle handler
     const vaftToggle = panel.querySelector('#reyohoho-vaft-toggle');
     const vaftTestBtn = panel.querySelector('#reyohoho-vaft-test');
@@ -139,8 +159,9 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
     return panel;
 }
 
-function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy) {
+function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy, hideAudioOnly) {
     const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
+    const hideAudioOnlyEnabled = hideAudioOnly === true;
 
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
         const extToggle = panel.querySelector('#reyohoho-ext-toggle');
@@ -154,6 +175,10 @@ function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy) {
         const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
         if (ircToggle) {
             ircToggle.checked = irc.enabled;
+        }
+        const audioOnlyToggle = panel.querySelector('#reyohoho-audio-only-toggle');
+        if (audioOnlyToggle) {
+            audioOnlyToggle.checked = hideAudioOnlyEnabled;
         }
         const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
         if (ircStatusEl) {
@@ -189,20 +214,20 @@ function updateProxyStatusInPanels(proxyStatus, ircProxy) {
     });
 }
 
-function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
     if (!container || container.querySelector('.reyohoho-proxy-settings')) {
         return false;
     }
 
-    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
+    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly);
     container.insertBefore(panel, container.firstChild);
     return true;
 }
 
-function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
     const settingsMenu = document.querySelector('[data-a-target="player-settings-menu"]');
 
-    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy)) {
+    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly)) {
         console.log('[ReYohoho] Injected into player settings menu');
         return true;
     }
@@ -210,7 +235,7 @@ function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks
     return false;
 }
 
-function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy) {
+function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
 
@@ -222,7 +247,7 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
         }
 
         if (shouldCheck) {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy);
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly);
         }
     });
 
