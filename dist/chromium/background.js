@@ -6,7 +6,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.4.2';
+const VERSION = '2.4.3';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
@@ -111,6 +111,8 @@ let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
 
 let russiaOnlyChannelsSet = new Set();
+let lastRussiaOnlyRefreshAt = 0;
+let russiaOnlyRefreshInProgress = false;
 
 // Load extension enabled state
 async function loadExtensionState() {
@@ -148,25 +150,41 @@ async function loadRussiaOnlyFromCache() {
 }
 
 async function refreshRussiaOnlyChannels() {
-    const list = await fetchRussiaOnlyChannels(PROXY_SERVERS);
-    if (!list) {
-        console.warn('[ReYohoho] russia-only refresh: no servers responded, keeping current list');
-        return false;
-    }
-    const next = new Set(list);
-    const changed = !setsEqual(next, russiaOnlyChannelsSet);
-    russiaOnlyChannelsSet = next;
+    if (russiaOnlyRefreshInProgress) return false;
+    russiaOnlyRefreshInProgress = true;
     try {
-        await chrome.storage.local.set({ [RUSSIA_ONLY_STORAGE_KEY]: list });
-    } catch (e) {
-        console.warn('[ReYohoho] Error saving russia-only cache:', e);
+        const list = await fetchRussiaOnlyChannels(PROXY_SERVERS);
+        // Update timestamp regardless of success: avoids hammering dead servers
+        // on every navigation when the backend is unreachable.
+        lastRussiaOnlyRefreshAt = Date.now();
+        if (!list) {
+            console.warn('[ReYohoho] russia-only refresh: no servers responded, keeping current list');
+            return false;
+        }
+        const next = new Set(list);
+        const changed = !setsEqual(next, russiaOnlyChannelsSet);
+        russiaOnlyChannelsSet = next;
+        try {
+            await chrome.storage.local.set({ [RUSSIA_ONLY_STORAGE_KEY]: list });
+        } catch (e) {
+            console.warn('[ReYohoho] Error saving russia-only cache:', e);
+        }
+        console.log(`[ReYohoho] russia-only refreshed from backend: ${next.size} channels${changed ? ' (changed)' : ''}`);
+        if (changed && extensionEnabled && currentProxyUrl) {
+            // Пересобираем DNR-правила: alternation в allow-rule изменился.
+            await updateProxyRules(true, currentProxyUrl);
+        }
+        return changed;
+    } finally {
+        russiaOnlyRefreshInProgress = false;
     }
-    console.log(`[ReYohoho] russia-only refreshed from backend: ${next.size} channels${changed ? ' (changed)' : ''}`);
-    if (changed && extensionEnabled && currentProxyUrl) {
-        // Пересобираем DNR-правила: alternation в allow-rule изменился.
-        await updateProxyRules(true, currentProxyUrl);
-    }
-    return changed;
+}
+
+function maybeRefreshRussiaOnly() {
+    if (Date.now() - lastRussiaOnlyRefreshAt < RUSSIA_ONLY_FETCH_INTERVAL) return;
+    refreshRussiaOnlyChannels().catch(e =>
+        console.warn('[ReYohoho] russia-only opportunistic refresh failed:', e)
+    );
 }
 
 // ============================================
@@ -304,6 +322,11 @@ async function checkAndUpdateProxy() {
         return;
     }
 
+    // Opportunistic refresh of the russia-only channel list. Runs in background
+    // (no await) and is rate-limited internally, so it never blocks proxy
+    // selection. Replaces the previous chrome.alarms-based periodic refresh.
+    maybeRefreshRussiaOnly();
+
     const now = Date.now();
     if (now - lastCheckTime < CHECK_INTERVAL) {
         if (currentProxyUrl) return;
@@ -373,19 +396,6 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 chrome.webNavigation.onBeforeNavigate.addListener(function(details) {
     if (details.url.includes("twitch.tv")) {
         checkAndUpdateProxy();
-    }
-});
-
-const RUSSIA_ONLY_ALARM = 'reyohoho-russia-only-refresh';
-chrome.alarms.create(RUSSIA_ONLY_ALARM, {
-    delayInMinutes: Math.max(1, Math.round(RUSSIA_ONLY_FETCH_INTERVAL / 60000)),
-    periodInMinutes: Math.max(1, Math.round(RUSSIA_ONLY_FETCH_INTERVAL / 60000))
-});
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === RUSSIA_ONLY_ALARM) {
-        refreshRussiaOnlyChannels().catch(e =>
-            console.warn('[ReYohoho] russia-only periodic refresh failed:', e)
-        );
     }
 });
 

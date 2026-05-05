@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "ReYohoho Twitch Proxy 1080p/1440p (Russia)",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "description": "Прокси для Twitch с поддержкой 1080p/1440p",
   "permissions": [
     "webRequest",
