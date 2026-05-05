@@ -1,6 +1,6 @@
 {
   "name": "reyohoho-twitch-proxy",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "Прокси для Twitch с поддержкой 1080p/1440p и блокировкой рекламы (VAFT)",
   "author": "ReYohoho",
   "license": "MIT",
