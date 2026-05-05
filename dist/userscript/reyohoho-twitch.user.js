@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.4.1
+// @version      2.4.2
 // @description  Прокси для Twitch с поддержкой 1080p/1440p; опция «Скрыть Audio Only» в настройках плеера
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
@@ -911,7 +911,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.4.1';
+const VERSION = '2.4.2';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
