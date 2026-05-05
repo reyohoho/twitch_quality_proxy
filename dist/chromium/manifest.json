@@ -8,7 +8,8 @@
     "webNavigation",
     "webRequest",
     "cookies",
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "https://*.twitch.tv/*",

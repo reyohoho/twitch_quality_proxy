@@ -27,6 +27,50 @@ const MODES = {
 const PROXY_CHECK_TIMEOUT = 3000;
 const CHECK_INTERVAL = 5000;
 
+const RUSSIA_ONLY_ENDPOINT_PATH = 'russia-only-channels';
+const RUSSIA_ONLY_STORAGE_KEY = 'russiaOnlyChannels';
+const RUSSIA_ONLY_LS_KEY = 'reyohoho_russia_only_channels';
+const RUSSIA_ONLY_FETCH_INTERVAL = 5 * 60 * 1000; // 5 минут
+const RUSSIA_ONLY_FETCH_TIMEOUT = 4000;
+
+function extractTwitchChannelFromUsherUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    const m = url.match(/usher\.ttvnw\.net\/api\/v[12]\/channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+    return m ? m[1].toLowerCase() : null;
+}
+
+async function fetchRussiaOnlyChannels(servers) {
+    if (!Array.isArray(servers) || servers.length === 0) return null;
+    for (const base of servers) {
+        const url = String(base || '').replace(/\/?$/, '/') + RUSSIA_ONLY_ENDPOINT_PATH;
+        try {
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), RUSSIA_ONLY_FETCH_TIMEOUT);
+            const res = await fetch(url, {
+                method: 'GET',
+                cache: 'no-store',
+                mode: 'cors',
+                signal: ctrl.signal
+            });
+            clearTimeout(tid);
+            if (!res.ok) {
+                console.warn(`[ReYohoho] russia-only fetch ${url} -> HTTP ${res.status}`);
+                continue;
+            }
+            const data = await res.json();
+            if (data && Array.isArray(data.channels)) {
+                return data.channels
+                    .map(c => String(c || '').toLowerCase().trim())
+                    .filter(c => c.length > 0);
+            }
+            console.warn(`[ReYohoho] russia-only fetch ${url}: invalid response shape`);
+        } catch (e) {
+            console.warn(`[ReYohoho] russia-only fetch ${url} failed:`, e.name || e.message);
+        }
+    }
+    return null;
+}
+
 // IRC chat WebSocket proxy
 const IRC_PROXY_HOST = 'https://ext.rte.net.ru:8443';
 const IRC_PROXY_TARGET_URL = 'wss://ext.rte.net.ru:8443/tw-irc-proxy';
@@ -71,7 +115,14 @@ if (typeof module !== 'undefined' && module.exports) {
         IRC_PROXY_SOURCE_PREFIX,
         IRC_PROXY_CHECK_INTERVAL,
         IRC_PROXY_CHECK_TIMEOUT,
-        VAFT_CONFIG
+        VAFT_CONFIG,
+        RUSSIA_ONLY_ENDPOINT_PATH,
+        RUSSIA_ONLY_STORAGE_KEY,
+        RUSSIA_ONLY_LS_KEY,
+        RUSSIA_ONLY_FETCH_INTERVAL,
+        RUSSIA_ONLY_FETCH_TIMEOUT,
+        extractTwitchChannelFromUsherUrl,
+        fetchRussiaOnlyChannels
     };
 }
 
@@ -85,6 +136,51 @@ let lastInterceptTime = 0;
 let interceptCount = 0;
 let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
+
+let russiaOnlyChannelsSet = new Set();
+
+function setsEqual(a, b) {
+    if (a.size !== b.size) return false;
+    for (const v of a) if (!b.has(v)) return false;
+    return true;
+}
+
+async function loadRussiaOnlyFromCache() {
+    try {
+        const r = await api.storage.local.get([RUSSIA_ONLY_STORAGE_KEY]);
+        const cached = r[RUSSIA_ONLY_STORAGE_KEY];
+        if (Array.isArray(cached)) {
+            russiaOnlyChannelsSet = new Set(cached.map(c => String(c).toLowerCase()));
+            console.log(`[ReYohoho] russia-only loaded from cache: ${russiaOnlyChannelsSet.size}`);
+        }
+    } catch (e) {
+        console.warn('[ReYohoho] Error loading russia-only cache:', e);
+    }
+}
+
+async function refreshRussiaOnlyChannels() {
+    const list = await fetchRussiaOnlyChannels(PROXY_SERVERS);
+    if (!list) {
+        console.warn('[ReYohoho] russia-only refresh: no servers responded, keeping current list');
+        return false;
+    }
+    const next = new Set(list);
+    const changed = !setsEqual(next, russiaOnlyChannelsSet);
+    russiaOnlyChannelsSet = next;
+    try {
+        await api.storage.local.set({ [RUSSIA_ONLY_STORAGE_KEY]: list });
+    } catch (e) {
+        console.warn('[ReYohoho] Error saving russia-only cache:', e);
+    }
+    console.log(`[ReYohoho] russia-only refreshed from backend: ${next.size} channels${changed ? ' (changed)' : ''}`);
+    return changed;
+}
+
+function isRussiaOnlyUsherUrlFromSet(url) {
+    if (!url || russiaOnlyChannelsSet.size === 0) return false;
+    const ch = extractTwitchChannelFromUsherUrl(url);
+    return ch ? russiaOnlyChannelsSet.has(ch) : false;
+}
 
 // Load extension enabled state
 async function loadExtensionState() {
@@ -155,6 +251,12 @@ function createProxyListener(authToken = "") {
     return function(details) {
         console.log("[ReYohoho] Proxy listener triggered for:", details.url);
         const originalUrl = details.url;
+
+        if (isRussiaOnlyUsherUrlFromSet(originalUrl)) {
+            console.log("[ReYohoho] Russia-only channel, bypassing proxy:", originalUrl);
+            return {};
+        }
+
         const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
         // Read the live toggle each time so a UI change applies on the
         // very next request without re-installing the listener.
@@ -316,24 +418,32 @@ api.webRequest.onBeforeRequest.addListener(
     []
 );
 
+setInterval(() => {
+    refreshRussiaOnlyChannels().catch(e =>
+        console.warn('[ReYohoho] russia-only periodic refresh failed:', e)
+    );
+}, RUSSIA_ONLY_FETCH_INTERVAL);
+
+async function bootstrap() {
+    await loadExtensionState();
+    await loadRussiaOnlyFromCache();
+    checkAndUpdateProxy();
+    refreshRussiaOnlyChannels().catch(e =>
+        console.warn('[ReYohoho] russia-only initial refresh failed:', e)
+    );
+}
+
 // Startup/Install listeners
 if (api.runtime.onStartup) {
-    api.runtime.onStartup.addListener(async () => {
-        await loadExtensionState();
-        checkAndUpdateProxy();
-    });
+    api.runtime.onStartup.addListener(bootstrap);
 }
 
 if (api.runtime.onInstalled) {
-    api.runtime.onInstalled.addListener(async () => {
-        await loadExtensionState();
-        checkAndUpdateProxy();
-    });
+    api.runtime.onInstalled.addListener(bootstrap);
 }
 
 // Initialize
 (async () => {
-    await loadExtensionState();
     console.log("[ReYohoho] Firefox background initialized");
-    checkAndUpdateProxy();
+    await bootstrap();
 })();

@@ -201,6 +201,50 @@ const MODES = {
 const PROXY_CHECK_TIMEOUT = 3000;
 const CHECK_INTERVAL = 5000;
 
+const RUSSIA_ONLY_ENDPOINT_PATH = 'russia-only-channels';
+const RUSSIA_ONLY_STORAGE_KEY = 'russiaOnlyChannels';
+const RUSSIA_ONLY_LS_KEY = 'reyohoho_russia_only_channels';
+const RUSSIA_ONLY_FETCH_INTERVAL = 5 * 60 * 1000; // 5 минут
+const RUSSIA_ONLY_FETCH_TIMEOUT = 4000;
+
+function extractTwitchChannelFromUsherUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    const m = url.match(/usher\.ttvnw\.net\/api\/v[12]\/channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+    return m ? m[1].toLowerCase() : null;
+}
+
+async function fetchRussiaOnlyChannels(servers) {
+    if (!Array.isArray(servers) || servers.length === 0) return null;
+    for (const base of servers) {
+        const url = String(base || '').replace(/\/?$/, '/') + RUSSIA_ONLY_ENDPOINT_PATH;
+        try {
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), RUSSIA_ONLY_FETCH_TIMEOUT);
+            const res = await fetch(url, {
+                method: 'GET',
+                cache: 'no-store',
+                mode: 'cors',
+                signal: ctrl.signal
+            });
+            clearTimeout(tid);
+            if (!res.ok) {
+                console.warn(`[ReYohoho] russia-only fetch ${url} -> HTTP ${res.status}`);
+                continue;
+            }
+            const data = await res.json();
+            if (data && Array.isArray(data.channels)) {
+                return data.channels
+                    .map(c => String(c || '').toLowerCase().trim())
+                    .filter(c => c.length > 0);
+            }
+            console.warn(`[ReYohoho] russia-only fetch ${url}: invalid response shape`);
+        } catch (e) {
+            console.warn(`[ReYohoho] russia-only fetch ${url} failed:`, e.name || e.message);
+        }
+    }
+    return null;
+}
+
 // IRC chat WebSocket proxy
 const IRC_PROXY_HOST = 'https://ext.rte.net.ru:8443';
 const IRC_PROXY_TARGET_URL = 'wss://ext.rte.net.ru:8443/tw-irc-proxy';

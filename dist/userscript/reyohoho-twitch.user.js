@@ -25,6 +25,66 @@
         'https://proxy6.rte.net.ru/'
     ];
 
+    const RUSSIA_ONLY_LS_KEY = 'reyohoho_russia_only_channels';
+    const RUSSIA_ONLY_FETCH_INTERVAL_MS = 5 * 60 * 1000;
+    const RUSSIA_ONLY_FETCH_TIMEOUT_MS = 4000;
+
+    function readRussiaOnlySync() {
+        try {
+            const raw = localStorage.getItem(RUSSIA_ONLY_LS_KEY);
+            if (!raw) return new Set();
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) return new Set();
+            return new Set(arr.map(c => String(c || '').toLowerCase()).filter(Boolean));
+        } catch (e) {
+            return new Set();
+        }
+    }
+
+    let RUSSIA_ONLY_CHANNELS = readRussiaOnlySync();
+    console.log(`[ReYohoho] russia-only loaded from localStorage: ${RUSSIA_ONLY_CHANNELS.size}`);
+
+    function isRussiaOnlyUsherUrlLocal(url) {
+        if (!url || typeof url !== 'string' || RUSSIA_ONLY_CHANNELS.size === 0) return false;
+        const m = url.match(/usher\.ttvnw\.net\/api\/v[12]\/channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+        if (!m) return false;
+        return RUSSIA_ONLY_CHANNELS.has(m[1].toLowerCase());
+    }
+
+    async function refreshRussiaOnlyFromBackend() {
+        for (const base of PROXY_SERVERS) {
+            const url = String(base).replace(/\/?$/, '/') + 'russia-only-channels';
+            try {
+                const ctrl = new AbortController();
+                const tid = setTimeout(() => ctrl.abort(), RUSSIA_ONLY_FETCH_TIMEOUT_MS);
+                const res = await fetch(url, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    mode: 'cors',
+                    signal: ctrl.signal
+                });
+                clearTimeout(tid);
+                if (!res.ok) continue;
+                const data = await res.json();
+                if (!data || !Array.isArray(data.channels)) continue;
+                const arr = data.channels
+                    .map(c => String(c || '').toLowerCase().trim())
+                    .filter(c => c.length > 0);
+                try { localStorage.setItem(RUSSIA_ONLY_LS_KEY, JSON.stringify(arr)); } catch (e) {}
+                RUSSIA_ONLY_CHANNELS = new Set(arr);
+                console.log(`[ReYohoho] russia-only refreshed from backend (${url}): ${RUSSIA_ONLY_CHANNELS.size}`);
+                return true;
+            } catch (e) {
+                // try next server
+            }
+        }
+        console.warn('[ReYohoho] russia-only refresh: no backend responded, keeping cached snapshot');
+        return false;
+    }
+
+    refreshRussiaOnlyFromBackend();
+    setInterval(refreshRussiaOnlyFromBackend, RUSSIA_ONLY_FETCH_INTERVAL_MS);
+
     // Get saved settings from localStorage
     const savedProxy = localStorage.getItem('reyohoho_proxy_url') || PROXY_SERVERS[0];
     const extensionEnabled = localStorage.getItem('reyohoho_enabled') !== 'false'; // Default true
@@ -107,14 +167,28 @@
             const authTokenNow = getAuthToken();
             const hideAudioOnlyForWorker = getHideAudioOnly();
 
+            const russiaOnlyJsonLiteral = JSON.stringify(Array.from(RUSSIA_ONLY_CHANNELS));
+
             const proxyCode = `
                 (function() {
                     const PROXY_URL = '${savedProxy}';
                     const AUTH_TOKEN = '${authTokenNow}';
                     const HIDE_AUDIO_ONLY = ${hideAudioOnlyForWorker ? 'true' : 'false'};
-                    
+                    const RUSSIA_ONLY = new Set(${russiaOnlyJsonLiteral});
+
+                    function isRussiaOnlyUsher(url) {
+                        if (typeof url !== 'string') return false;
+                        const m = url.match(/usher\\.ttvnw\\.net\\/api\\/v[12]\\/channel\\/hls\\/([^\\/.?&#]+)\\.m3u8/i);
+                        if (!m) return false;
+                        return RUSSIA_ONLY.has(m[1].toLowerCase());
+                    }
+
                     function replaceUrl(url) {
                         if (typeof url === 'string' && url.includes('usher.ttvnw.net')) {
+                            if (isRussiaOnlyUsher(url)) {
+                                console.log('[ReYohoho Worker] Russia-only channel, bypassing proxy:', url.substring(0, 60) + '...');
+                                return url;
+                            }
                             let newUrl = PROXY_URL + url;
                             // Add auth token if available
                             if (AUTH_TOKEN) {
@@ -209,14 +283,22 @@
         }
         let url = args[0];
         if (typeof url === 'string' && url.includes('usher.ttvnw.net')) {
-            args[0] = buildProxyUrl(url, savedProxy);
-            console.log('[ReYohoho] Intercepting fetch:', url.substring(0, 60) + '...');
-            notifyIntercept();
+            if (isRussiaOnlyUsherUrlLocal(url)) {
+                console.log('[ReYohoho] Russia-only channel, bypassing proxy (fetch):', url.substring(0, 60) + '...');
+            } else {
+                args[0] = buildProxyUrl(url, savedProxy);
+                console.log('[ReYohoho] Intercepting fetch:', url.substring(0, 60) + '...');
+                notifyIntercept();
+            }
         } else if (url instanceof Request && url.url.includes('usher.ttvnw.net')) {
-            const newUrl = buildProxyUrl(url.url, savedProxy);
-            args[0] = new Request(newUrl, url);
-            console.log('[ReYohoho] Intercepting Request:', url.url.substring(0, 60) + '...');
-            notifyIntercept();
+            if (isRussiaOnlyUsherUrlLocal(url.url)) {
+                console.log('[ReYohoho] Russia-only channel, bypassing proxy (Request):', url.url.substring(0, 60) + '...');
+            } else {
+                const newUrl = buildProxyUrl(url.url, savedProxy);
+                args[0] = new Request(newUrl, url);
+                console.log('[ReYohoho] Intercepting Request:', url.url.substring(0, 60) + '...');
+                notifyIntercept();
+            }
         }
         return originalFetch.apply(this, args);
     };
@@ -224,9 +306,13 @@
     const originalXHROpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method, url, ...rest) {
         if (extensionEnabled && typeof url === 'string' && url.includes('usher.ttvnw.net')) {
-            url = buildProxyUrl(url, savedProxy);
-            console.log('[ReYohoho] Intercepting XHR:', url.substring(0, 60) + '...');
-            notifyIntercept();
+            if (isRussiaOnlyUsherUrlLocal(url)) {
+                console.log('[ReYohoho] Russia-only channel, bypassing proxy (XHR):', url.substring(0, 60) + '...');
+            } else {
+                url = buildProxyUrl(url, savedProxy);
+                console.log('[ReYohoho] Intercepting XHR:', url.substring(0, 60) + '...');
+                notifyIntercept();
+            }
         }
         return originalXHROpen.call(this, method, url, ...rest);
     };
@@ -843,6 +929,50 @@ const MODES = {
 
 const PROXY_CHECK_TIMEOUT = 3000;
 const CHECK_INTERVAL = 5000;
+
+const RUSSIA_ONLY_ENDPOINT_PATH = 'russia-only-channels';
+const RUSSIA_ONLY_STORAGE_KEY = 'russiaOnlyChannels';
+const RUSSIA_ONLY_LS_KEY = 'reyohoho_russia_only_channels';
+const RUSSIA_ONLY_FETCH_INTERVAL = 5 * 60 * 1000; // 5 минут
+const RUSSIA_ONLY_FETCH_TIMEOUT = 4000;
+
+function extractTwitchChannelFromUsherUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    const m = url.match(/usher\.ttvnw\.net\/api\/v[12]\/channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+    return m ? m[1].toLowerCase() : null;
+}
+
+async function fetchRussiaOnlyChannels(servers) {
+    if (!Array.isArray(servers) || servers.length === 0) return null;
+    for (const base of servers) {
+        const url = String(base || '').replace(/\/?$/, '/') + RUSSIA_ONLY_ENDPOINT_PATH;
+        try {
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), RUSSIA_ONLY_FETCH_TIMEOUT);
+            const res = await fetch(url, {
+                method: 'GET',
+                cache: 'no-store',
+                mode: 'cors',
+                signal: ctrl.signal
+            });
+            clearTimeout(tid);
+            if (!res.ok) {
+                console.warn(`[ReYohoho] russia-only fetch ${url} -> HTTP ${res.status}`);
+                continue;
+            }
+            const data = await res.json();
+            if (data && Array.isArray(data.channels)) {
+                return data.channels
+                    .map(c => String(c || '').toLowerCase().trim())
+                    .filter(c => c.length > 0);
+            }
+            console.warn(`[ReYohoho] russia-only fetch ${url}: invalid response shape`);
+        } catch (e) {
+            console.warn(`[ReYohoho] russia-only fetch ${url} failed:`, e.name || e.message);
+        }
+    }
+    return null;
+}
 
 // IRC chat WebSocket proxy
 const IRC_PROXY_HOST = 'https://ext.rte.net.ru:8443';
