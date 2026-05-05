@@ -8,7 +8,7 @@ const api = typeof browser !== 'undefined' ? browser : chrome;
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.4.3';
+const VERSION = '2.4.4';
 
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",

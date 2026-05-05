@@ -296,7 +296,7 @@
     // (DNS, TLS, timeout) flips the cached availability flag to false so
     // active sockets get dropped and Twitch reconnects via direct.
     async function checkIrcProxyAvailability() {
-        const probeUrl = (typeof IRC_PROXY_HOST !== 'undefined' ? IRC_PROXY_HOST : 'https://ext.rte.net.ru:8443') + '/';
+        const probeUrl = (typeof IRC_PROXY_HOST !== 'undefined' ? IRC_PROXY_HOST : 'https://ext.rte.net.ru:8443') + '/https://google.com';
         const timeoutMs = typeof IRC_PROXY_CHECK_TIMEOUT !== 'undefined' ? IRC_PROXY_CHECK_TIMEOUT : 3000;
 
         let available = false;
