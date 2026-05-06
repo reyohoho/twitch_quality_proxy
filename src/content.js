@@ -284,7 +284,7 @@
             saveIrcProxyEnabledToLocalStorage(enabled);
             console.log(`[ReYohoho] IRC proxy ${enabled ? 'enabled' : 'disabled'}`);
             dispatchIrcProxyDrop(enabled ? 'toggle-on' : 'toggle-off');
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
         } catch (e) {
             console.error('[ReYohoho] Error saving IRC proxy state:', e);
         }
@@ -375,10 +375,26 @@
         return { enabled: ircProxyEnabled, available: ircProxyAvailable };
     }
 
+    // Live snapshot used by the MutationObserver to render the panel
+    // against current state instead of values captured at initUI() time.
+    // Critical for toggles that don't reload the page (e.g. IRC proxy):
+    // without this, closing and reopening the Twitch settings menu after
+    // a toggle would re-render the panel with the pre-toggle state.
+    function getCurrentUIState() {
+        return {
+            extensionEnabled,
+            vaftEnabled,
+            proxyStatus,
+            callbacks,
+            ircProxy: ircProxyState(),
+            hideAudioOnly: hideAudioOnlyEnabled
+        };
+    }
+
     // Initialize UI injection
     function initUI() {
         // Start observer for settings menu
-        startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState(), hideAudioOnlyEnabled);
+        startObserver(getCurrentUIState);
         
         // Periodic check
         setInterval(() => {

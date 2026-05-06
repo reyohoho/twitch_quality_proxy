@@ -1168,29 +1168,37 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
     return panel;
 }
 
+// Updates all live panels. Each toggle is only touched when the caller
+// passed a defined value for it — so a partial update (e.g. only the
+// IRC proxy state) won't accidentally flip unrelated toggles to their
+// boolean default. This guards against bugs where an `undefined`
+// argument would coerce to `false` and visually animate a user-enabled
+// toggle (e.g. Audio Only) into the OFF position without actually
+// changing any persisted state.
 function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy, hideAudioOnly) {
-    const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
-    const hideAudioOnlyEnabled = hideAudioOnly === true;
+    const irc = ircProxy !== undefined
+        ? getIrcProxyDisplay(extensionEnabled, ircProxy)
+        : null;
 
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
         const extToggle = panel.querySelector('#reyohoho-ext-toggle');
-        if (extToggle) {
+        if (extToggle && typeof extensionEnabled === 'boolean') {
             extToggle.checked = extensionEnabled;
         }
         const vaftToggle = panel.querySelector('#reyohoho-vaft-toggle');
-        if (vaftToggle) {
+        if (vaftToggle && typeof vaftEnabled === 'boolean') {
             vaftToggle.checked = vaftEnabled;
         }
         const ircToggle = panel.querySelector('#reyohoho-irc-toggle');
-        if (ircToggle) {
+        if (ircToggle && irc) {
             ircToggle.checked = irc.enabled;
         }
         const audioOnlyToggle = panel.querySelector('#reyohoho-audio-only-toggle');
-        if (audioOnlyToggle) {
-            audioOnlyToggle.checked = hideAudioOnlyEnabled;
+        if (audioOnlyToggle && typeof hideAudioOnly === 'boolean') {
+            audioOnlyToggle.checked = hideAudioOnly;
         }
         const ircStatusEl = panel.querySelector('.reyohoho-irc-status');
-        if (ircStatusEl) {
+        if (ircStatusEl && irc) {
             ircStatusEl.textContent = irc.badgeText;
             ircStatusEl.dataset.status = irc.badgeStatus;
         }
@@ -1244,7 +1252,14 @@ function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks
     return false;
 }
 
-function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
+// `getState` is invoked on every relevant mutation so the freshly
+// (re)opened settings menu is rendered against the *current* state
+// (extension toggle, IRC proxy on/off + availability, etc.) rather than
+// the snapshot captured when this observer was first wired up. Without
+// this getter, closing and reopening the player settings menu after
+// flipping the IRC proxy toggle would re-inject a panel showing the
+// stale pre-toggle UI.
+function startObserver(getState) {
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
 
@@ -1256,7 +1271,15 @@ function startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ir
         }
 
         if (shouldCheck) {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly);
+            const s = getState();
+            tryInjectSettings(
+                s.extensionEnabled,
+                s.vaftEnabled,
+                s.proxyStatus,
+                s.callbacks,
+                s.ircProxy,
+                s.hideAudioOnly
+            );
         }
     });
 
@@ -2726,7 +2749,7 @@ initVAFT();`;
             saveIrcProxyEnabledToLocalStorage(enabled);
             console.log(`[ReYohoho] IRC proxy ${enabled ? 'enabled' : 'disabled'}`);
             dispatchIrcProxyDrop(enabled ? 'toggle-on' : 'toggle-off');
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState());
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
         } catch (e) {
             console.error('[ReYohoho] Error saving IRC proxy state:', e);
         }
@@ -2817,10 +2840,26 @@ initVAFT();`;
         return { enabled: ircProxyEnabled, available: ircProxyAvailable };
     }
 
+    // Live snapshot used by the MutationObserver to render the panel
+    // against current state instead of values captured at initUI() time.
+    // Critical for toggles that don't reload the page (e.g. IRC proxy):
+    // without this, closing and reopening the Twitch settings menu after
+    // a toggle would re-render the panel with the pre-toggle state.
+    function getCurrentUIState() {
+        return {
+            extensionEnabled,
+            vaftEnabled,
+            proxyStatus,
+            callbacks,
+            ircProxy: ircProxyState(),
+            hideAudioOnly: hideAudioOnlyEnabled
+        };
+    }
+
     // Initialize UI injection
     function initUI() {
         // Start observer for settings menu
-        startObserver(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState(), hideAudioOnlyEnabled);
+        startObserver(getCurrentUIState);
         
         // Periodic check
         setInterval(() => {
