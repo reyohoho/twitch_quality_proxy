@@ -76,16 +76,29 @@ const IRC_PROXY_SOURCE_PREFIX = 'wss://irc-ws.chat.twitch.tv';
 const IRC_PROXY_CHECK_INTERVAL = 30000; // 30 seconds
 const IRC_PROXY_CHECK_TIMEOUT = 3000;
 
-// VAFT Configuration
+// VAFT Configuration (synced with TwitchAdSolutions/vaft v65.3.0)
 const VAFT_CONFIG = {
-    AdSignifier: 'stitched',
+    // 'twitch-stitched' is a prefix (catches -ad / -mid / -pod / etc.). Twitch-prefixed
+    // so we don't re-introduce false-positive from a bare 'stitched' substring match.
+    AdSignifiers: ['stitched-ad', 'EXT-X-CUE-OUT', 'twitch-stitched', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"'],
+    AdSegmentURLPatterns: ['/adsquared/', '/_404/', '/processing'],
     ClientID: 'kimne78kx3ncx6brgo4mv6wki5h1ko',
-    BackupPlayerTypes: ['site', 'popout', 'mobile_web', 'embed',],
+    // Order matters: first clean type wins. 'embed' moved to end - field-observed Twitch
+    // returns GQL "server error" for embed when requested from twitch.tv origin.
+    BackupPlayerTypes: ['site', 'popout', 'mobile_web', 'embed'],
     FallbackPlayerType: 'site',
     ForceAccessTokenPlayerType: 'popout',
-    SkipPlayerReloadOnHevc: false,
+    PreferLowQualityBackup: true,   // Hybrid safety net: append autoplay (360p) as last-resort backup + sticky CSAI escape hatch
+    FastAutoplayFirstTry: false,    // Opt-in: try autoplay first when prior break committed it via escape hatch (SSAI-uniform channels)
+    BackupSwapFirst: true,          // On ad detect, immediately swap to a backup player-type m3u8 (TTV-AB-style) instead of strip
+    SkipPlayerReloadOnHevc: false,  // Skip reload on 2k/4k streams (avoids #4000/#3000 errors on chromium)
     AlwaysReloadPlayerOnAd: false,
-    ReloadPlayerAfterAd: true,
+    ReloadPlayerAfterAd: true,      // After the ad finishes do a player reload instead of pause/play
+    ReloadCooldownSeconds: 30,      // Min seconds between reloads — breaks CSAI cascades
+    DisableReloadCap: false,        // If true, buffer monitor reloads unlimited times (cascade risk)
+    DriftCorrectionRate: 1.1,       // Playback rate for catching up to live edge after reload (0 = disable)
+    EarlyReloadPollThreshold: 3,    // Consecutive all-stripped polls before triggering early reload (each ~2s)
+    PinBackupPlayerType: true,      // Remember which backup player type worked, try it first on next break
     PlayerReloadMinimalRequestsTime: 1500,
     PlayerReloadMinimalRequestsPlayerIndex: 2,
     PlayerBufferingFix: true,
@@ -96,7 +109,8 @@ const VAFT_CONFIG = {
     PlayerBufferingMinRepeatDelay: 8000,
     PlayerBufferingPrerollCheckEnabled: false,
     PlayerBufferingPrerollCheckOffset: 5,
-    IsAdStrippingEnabled: true
+    IsAdStrippingEnabled: true,
+    StreamInfoMaxAgeMs: 30 * 60 * 1000
 };
 
 

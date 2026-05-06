@@ -254,9 +254,30 @@ function buildChromium() {
     
     writeFile(path.join(chromiumDir, 'background.js'), backgroundContent);
     
-    // Build VAFT as separate file for Chromium (CSP requirement)
-    const vaftForFile = prepareVaftForInjection();
-    writeFile(path.join(chromiumDir, 'vaft.js'), `(function(){\n${vaftForFile}\n})();`);
+    // Build VAFT as separate file for Chromium.
+    // Loaded as MAIN-world content script via manifest at document_start —
+    // this guarantees the fetch/Worker hooks are installed BEFORE Twitch's
+    // bundle starts (no async <script src> race). Old approach (script tag
+    // injection from content.js) had a ~150ms window during which Twitch
+    // could fetch /integrity and /gql un-hooked, causing all backup player
+    // types to return ad-laden tokens (black screen on prerolls).
+    let vaftCode = readFile(path.join(SRC_DIR, 'core', 'vaft.js'));
+    vaftCode = removeModuleExports(vaftCode);
+    const constantsForVaft = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    const vaftConfigMatch = constantsForVaft.match(/const VAFT_CONFIG = \{[\s\S]*?\};/);
+    const vaftConfigInline = vaftConfigMatch ? vaftConfigMatch[0] : '';
+
+    const chromiumVaftBundle = `(function(){
+try {
+    if (typeof localStorage === 'undefined' || localStorage.getItem('reyohoho_vaft_enabled') !== 'true') {
+        return;
+    }
+} catch (e) { return; }
+${vaftConfigInline}
+${vaftCode}
+try { initVAFT(); } catch (e) { console.error('[ReYohoho VAFT] init failed:', e); }
+})();`;
+    writeFile(path.join(chromiumDir, 'vaft.js'), chromiumVaftBundle);
 
     // Copy IRC WebSocket URL rewriter (runs in MAIN world via manifest)
     copyFile(
@@ -276,10 +297,16 @@ function buildChromium() {
         .replace('// @build-include core/constants.js', constants)
         .replace('// @build-include core/ui-panel.js', uiPanel);
 
-    // For Chromium: use external script due to CSP
+    // For Chromium: vaft.js is registered as a MAIN-world content_script in
+    // the manifest, so it loads synchronously at document_start before any
+    // Twitch code runs. The script-tag injection here is now a no-op — we
+    // mark as initialised and bail out before touching the DOM. Toggling
+    // the panel still requires a page reload (same behaviour as before)
+    // because the manifest entry checks localStorage.reyohoho_vaft_enabled
+    // at script start.
     contentContent = contentContent.replace(
         '// @build-vaft-injection',
-        `script.src = chrome.runtime.getURL('vaft.js');`
+        `vaftInitialized = true; return; // vaft.js is loaded as MAIN-world content script via manifest`
     );
     
     // Remove module exports

@@ -36,6 +36,16 @@
         "https://twitch.tv/*",
         "https://dashboard.twitch.tv/*"
       ],
+      "js": ["vaft.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.twitch.tv/*",
+        "https://twitch.tv/*",
+        "https://dashboard.twitch.tv/*"
+      ],
       "js": ["content.js"],
       "css": ["styles.css"],
       "run_at": "document_start"
