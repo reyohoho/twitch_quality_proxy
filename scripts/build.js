@@ -109,18 +109,9 @@ function processIncludes(content, baseDir) {
     return content;
 }
 
-// Prepare VAFT code for injection (escape for template literal)
+// Prepare upstream VAFT code for injection (escape for template literal)
 function prepareVaftForInjection() {
-    let vaftCode = readFile(path.join(SRC_DIR, 'core', 'vaft.js'));
-    vaftCode = removeModuleExports(vaftCode);
-    
-    // Add VAFT_CONFIG and call initVAFT
-    const constantsCode = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
-    // Extract only VAFT_CONFIG from constants
-    const vaftConfigMatch = constantsCode.match(/const VAFT_CONFIG = \{[\s\S]*?\};/);
-    const vaftConfig = vaftConfigMatch ? vaftConfigMatch[0] : '';
-    
-    return `${vaftConfig}\n${vaftCode}\ninitVAFT();`;
+    return readFile(path.join(SRC_DIR, 'core', 'vaft.js'));
 }
 
 // Escape code for embedding into a JS template literal
@@ -261,11 +252,7 @@ function buildChromium() {
     // injection from content.js) had a ~150ms window during which Twitch
     // could fetch /integrity and /gql un-hooked, causing all backup player
     // types to return ad-laden tokens (black screen on prerolls).
-    let vaftCode = readFile(path.join(SRC_DIR, 'core', 'vaft.js'));
-    vaftCode = removeModuleExports(vaftCode);
-    const constantsForVaft = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
-    const vaftConfigMatch = constantsForVaft.match(/const VAFT_CONFIG = \{[\s\S]*?\};/);
-    const vaftConfigInline = vaftConfigMatch ? vaftConfigMatch[0] : '';
+    const vaftCode = readFile(path.join(SRC_DIR, 'core', 'vaft.js'));
 
     const chromiumVaftBundle = `(function(){
 try {
@@ -273,9 +260,7 @@ try {
         return;
     }
 } catch (e) { return; }
-${vaftConfigInline}
 ${vaftCode}
-try { initVAFT(); } catch (e) { console.error('[ReYohoho VAFT] init failed:', e); }
 })();`;
     writeFile(path.join(chromiumDir, 'vaft.js'), chromiumVaftBundle);
 
