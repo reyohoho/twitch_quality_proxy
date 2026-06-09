@@ -15,6 +15,9 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const SRC_DIR = path.join(ROOT_DIR, 'src');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 
+// Single source of truth for the version: package.json
+const PKG_VERSION = require(path.join(ROOT_DIR, 'package.json')).version;
+
 // ============================================
 // BUILD FLAGS
 // ============================================
@@ -147,15 +150,22 @@ function buildIrcWsProxyInjector() {
 `;
 }
 
+// Copy a manifest.json while forcing its "version" to match package.json
+function writeManifestWithVersion(srcPath, destPath) {
+    const manifest = JSON.parse(readFile(srcPath));
+    manifest.version = PKG_VERSION;
+    writeFile(destPath, JSON.stringify(manifest, null, 2) + '\n');
+}
+
 // Build Firefox extension
 function buildFirefox() {
-    console.log('Building Firefox extension...');
+    console.log(`Building Firefox extension (v${PKG_VERSION})...`);
     
     const firefoxDir = path.join(DIST_DIR, 'firefox');
     ensureDir(firefoxDir);
     
-    // Copy manifest
-    copyFile(
+    // Copy manifest (version synced from package.json)
+    writeManifestWithVersion(
         path.join(SRC_DIR, 'platform', 'firefox', 'manifest.json'),
         path.join(firefoxDir, 'manifest.json')
     );
@@ -218,13 +228,13 @@ function buildFirefox() {
 
 // Build Chromium extension
 function buildChromium() {
-    console.log('Building Chromium extension...');
+    console.log(`Building Chromium extension (v${PKG_VERSION})...`);
     
     const chromiumDir = path.join(DIST_DIR, 'chromium');
     ensureDir(chromiumDir);
     
-    // Copy manifest
-    copyFile(
+    // Copy manifest (version synced from package.json)
+    writeManifestWithVersion(
         path.join(SRC_DIR, 'platform', 'chromium', 'manifest.json'),
         path.join(chromiumDir, 'manifest.json')
     );
@@ -311,13 +321,19 @@ ${vaftCode}
 
 // Build Userscript
 function buildUserscript() {
-    console.log('Building Userscript...');
+    console.log(`Building Userscript (v${PKG_VERSION})...`);
     
     const userscriptDir = path.join(DIST_DIR, 'userscript');
     ensureDir(userscriptDir);
     
     // Read header (contains proxy interceptor and IIFE start)
-    let userscript = readFile(path.join(SRC_DIR, 'platform', 'userscript', 'header.js'));
+    let header = readFile(path.join(SRC_DIR, 'platform', 'userscript', 'header.js'));
+    // Sync @version from package.json
+    header = header.replace(
+        /^(\/\/\s*@version\s+).*$/m,
+        `$1${PKG_VERSION}`
+    );
+    let userscript = header;
     userscript += '\n\n';
 
     // Inline IRC WS proxy. Userscripts with @grant none run in the page's

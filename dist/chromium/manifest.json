@@ -26,7 +26,9 @@
         "https://twitch.tv/*",
         "https://dashboard.twitch.tv/*"
       ],
-      "js": ["irc-ws-proxy.js"],
+      "js": [
+        "irc-ws-proxy.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
@@ -36,7 +38,9 @@
         "https://twitch.tv/*",
         "https://dashboard.twitch.tv/*"
       ],
-      "js": ["vaft.js"],
+      "js": [
+        "vaft.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
@@ -46,15 +50,23 @@
         "https://twitch.tv/*",
         "https://dashboard.twitch.tv/*"
       ],
-      "js": ["content.js"],
-      "css": ["styles.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["vaft.js"],
-      "matches": ["https://*.twitch.tv/*"]
+      "resources": [
+        "vaft.js"
+      ],
+      "matches": [
+        "https://*.twitch.tv/*"
+      ]
     }
   ]
 }
