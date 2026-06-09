@@ -150,6 +150,16 @@ function buildIrcWsProxyInjector() {
 `;
 }
 
+// Read core/constants.js with VERSION synced from package.json.
+// This VERSION is what the in-page UI panel displays.
+function readConstants() {
+    const constants = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    return constants.replace(
+        /^(const\s+VERSION\s*=\s*)['"].*['"]\s*;?\s*$/m,
+        `$1'${PKG_VERSION}';`
+    );
+}
+
 // Copy a manifest.json while forcing its "version" to match package.json
 function writeManifestWithVersion(srcPath, destPath) {
     const manifest = JSON.parse(readFile(srcPath));
@@ -175,7 +185,7 @@ function buildFirefox() {
     backgroundContent = processIncludes(backgroundContent, path.join(SRC_DIR, 'platform', 'firefox'));
     
     // Inline constants
-    const constantsContent = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    const constantsContent = readConstants();
     backgroundContent = backgroundContent.replace('// @build-include ../core/constants.js', constantsContent);
     
     // Inline proxy checker
@@ -188,7 +198,7 @@ function buildFirefox() {
     let contentContent = readFile(path.join(SRC_DIR, 'content.js'));
     
     // Inline all core modules
-    const constants = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    const constants = readConstants();
     let uiPanel = readFile(path.join(SRC_DIR, 'core', 'ui-panel.js'));
     uiPanel = processVaftTestButton(uiPanel, VAFT_TEST_BUTTON_ENABLED);
     
@@ -243,7 +253,7 @@ function buildChromium() {
     let backgroundContent = readFile(path.join(SRC_DIR, 'platform', 'chromium', 'background.js'));
     
     // Inline constants
-    const constantsContent = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    const constantsContent = readConstants();
     backgroundContent = backgroundContent.replace('// @build-include ../core/constants.js', constantsContent);
     
     // Inline proxy checker
@@ -284,7 +294,7 @@ ${vaftCode}
     let contentContent = readFile(path.join(SRC_DIR, 'content.js'));
     
     // Inline all core modules
-    const constants = readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    const constants = readConstants();
     let uiPanel = readFile(path.join(SRC_DIR, 'core', 'ui-panel.js'));
     uiPanel = processVaftTestButton(uiPanel, VAFT_TEST_BUTTON_ENABLED);
     
@@ -359,7 +369,7 @@ function buildUserscript() {
 `;
     
     // Add constants
-    userscript += readFile(path.join(SRC_DIR, 'core', 'constants.js'));
+    userscript += readConstants();
     userscript += '\n\n';
     
     // Add UI Panel
