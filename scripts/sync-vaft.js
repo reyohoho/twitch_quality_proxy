@@ -199,6 +199,11 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                     frozenSinceTs = 0;
                     return;
                 }
+                // User deliberately paused — thin live-edge buffer looks like a stall but isn't.
+                if (video.paused && (typeof playerBufferState !== 'undefined') && playerBufferState.userPauseIntent) {
+                    frozenSinceTs = 0;
+                    return;
+                }
                 // Frozen playhead. Only a drained buffer counts as a real stall —
                 // a user pause keeps buffered content ahead of the playhead.
                 if (ahead >= 1.5) { frozenSinceTs = 0; return; }
@@ -218,6 +223,10 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                     snap('frozen ' + frozenFor.toFixed(1) + 's (need ' + threshold + 's, everPlayed=' + everPlayed + ', settling=' + settling + ')', c);
                 }
                 if (frozenFor >= threshold && !document.hidden && (now - lastRecoveryTs) >= RECOVERY_COOLDOWN_MS) {
+                    if (video.paused && (typeof playerBufferState !== 'undefined') && playerBufferState.userPauseIntent) {
+                        frozenSinceTs = 0;
+                        return;
+                    }
                     frozenSinceTs = 0;
                     recover(c);
                 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.5.0
+// @version      2.5.1
 // @description  Прокси для Twitch с поддержкой 1080p/1440p; опция «Скрыть Audio Only» в настройках плеера
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
@@ -911,7 +911,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.5.0';
+const VERSION = '2.5.1';
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
     "https://proxy7.rte.net.ru/",
@@ -3324,6 +3324,7 @@ function startObserver(getState) {
         recoveryReloadUsed: false,
         userPauseIntent: false,
         loggedPauseIntent: false,
+        programmaticPause: false,
         weJustPaused: 0,
         inAdBreak: false,
         vaftEverUnmuted: false
@@ -3343,9 +3344,8 @@ function startObserver(getState) {
                 if (video && !video.__tasIntentHooked) {
                     video.__tasIntentHooked = true;
                     video.addEventListener('pause', () => {
-                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
-                            playerBufferState.userPauseIntent = true;
-                        }
+                        if (playerBufferState.programmaticPause) return;
+                        playerBufferState.userPauseIntent = true;
                     });
                     video.addEventListener('play', () => {
                         playerBufferState.userPauseIntent = false;
@@ -3440,7 +3440,9 @@ function startObserver(getState) {
                             // and currentTime=0, snowballing into a self-reinforcing reload cascade. With
                             // AND, real stalls (frozen + buffer drained below DangerZone) still fire on the
                             // same poll cadence; healthy thin-buffer feeds no longer trip it.
-                            (positionFrozen && bufferDuration < PlayerBufferingDangerZone)  &&
+                            // ReYohoho: 0.1s threshold — live-edge breathing at 0.3-0.5s is normal; pause/play
+                            // there triggers Twitch PAUSE_ADS and leaves the player stuck at t=0.
+                            (positionFrozen && bufferDuration < 0.1)  &&
                             playerBufferState.bufferedPosition == bufferedPosition &&
                             playerBufferState.bufferDuration >= bufferDuration &&
                             (position != 0 || bufferedPosition != 0 || bufferDuration != 0)
@@ -3764,15 +3766,19 @@ function startObserver(getState) {
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
+            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
             playerBufferState.weJustPaused = Date.now();
+            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             return;
         }
         if (isReload && document.pictureInPictureElement) {
             // Downgrade to pause/play to preserve PiP — setSrc exits PiP
+            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
+            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             console.log('[AD DEBUG] Downgraded reload to pause/play to preserve PiP');
             return;
         }
@@ -4091,6 +4097,10 @@ function startObserver(getState) {
                     }
                 }
                 if (url.includes('edge.ads.twitch.tv')) {
+                    if (url.includes('PAUSE_ADS')) {
+                        console.log('[AD DEBUG] Blocked PAUSE_ADS request — pause ads break playback when ad endpoint is blocked');
+                        return Promise.resolve(new Response('', { status: 204, statusText: 'No Content' }));
+                    }
                     const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
                     if (!loggedCsaiTypes.has(csaiType)) {
                         loggedCsaiTypes.add(csaiType);
@@ -4353,6 +4363,11 @@ function startObserver(getState) {
                     frozenSinceTs = 0;
                     return;
                 }
+                // User deliberately paused — thin live-edge buffer looks like a stall but isn't.
+                if (video.paused && (typeof playerBufferState !== 'undefined') && playerBufferState.userPauseIntent) {
+                    frozenSinceTs = 0;
+                    return;
+                }
                 // Frozen playhead. Only a drained buffer counts as a real stall —
                 // a user pause keeps buffered content ahead of the playhead.
                 if (ahead >= 1.5) { frozenSinceTs = 0; return; }
@@ -4372,6 +4387,10 @@ function startObserver(getState) {
                     snap('frozen ' + frozenFor.toFixed(1) + 's (need ' + threshold + 's, everPlayed=' + everPlayed + ', settling=' + settling + ')', c);
                 }
                 if (frozenFor >= threshold && !document.hidden && (now - lastRecoveryTs) >= RECOVERY_COOLDOWN_MS) {
+                    if (video.paused && (typeof playerBufferState !== 'undefined') && playerBufferState.userPauseIntent) {
+                        frozenSinceTs = 0;
+                        return;
+                    }
                     frozenSinceTs = 0;
                     recover(c);
                 }
