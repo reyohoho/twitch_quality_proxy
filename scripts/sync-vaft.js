@@ -153,6 +153,11 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                 if (typeof playerBufferState !== 'undefined') {
                     playerBufferState.userPauseIntent = false;
                     playerBufferState.loggedPauseIntent = false;
+                    // Mark our own reload so the next freeze check grants settling grace
+                    // (STALL_INITIAL_SECONDS instead of STALL_SECONDS). A freshly reloaded
+                    // hard-reset instance starts at t=0/readyState=0 and needs time to spin
+                    // up; without this the watchdog re-fired every ~15s and cascaded.
+                    playerBufferState.lastReloadAt = now;
                 }
                 if (!c.ps || !c.ps.state) { console.log('[ReYohoho WD] recovery aborted — no player state'); return; }
                 var video = c.video;
@@ -215,7 +220,7 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                 // only to an unexpected stall on already-playing content.
                 var inAd = (typeof playerBufferState !== 'undefined' && playerBufferState.inAdBreak) ? true : false;
                 var stripping = (typeof isActivelyStrippingAds !== 'undefined' && isActivelyStrippingAds) ? true : false;
-                var recentReload = (typeof playerBufferState !== 'undefined' && playerBufferState.lastReloadAt && (now - playerBufferState.lastReloadAt) < 12000) ? true : false;
+                var recentReload = (typeof playerBufferState !== 'undefined' && playerBufferState.lastReloadAt && (now - playerBufferState.lastReloadAt) < 20000) ? true : false;
                 var settling = (!everPlayed) || inAd || stripping || recentReload;
                 var threshold = settling ? STALL_INITIAL_SECONDS : STALL_SECONDS;
                 if (verbose && now - lastLogTs >= 2000) {
@@ -255,6 +260,50 @@ function applyReyohohoPatches(code) {
         '    hookWindowWorker();',
         STALL_WATCHDOG + '\n    hookWindowWorker();',
         'stall watchdog insertion'
+    );
+
+    // Patch 3: tighten the buffer-monitor stall trigger. Upstream fires pause/play
+    // when positionFrozen && bufferDuration < PlayerBufferingDangerZone, but on the
+    // IVS player at the live edge a momentary lull (bufferDuration ~0.3-0.5s,
+    // readyState=4) is normal. pause/play there triggers Twitch PAUSE_ADS and tears
+    // the player down to t=0, cascading into repeated watchdog hard reloads. Require
+    // a much thinner buffer (0.1s) AND readyState < 3 (no decodable frames buffered)
+    // so only a genuinely drained, frozen player trips the fix.
+    code = replaceOnce(
+        code,
+        "                            // same poll cadence; healthy thin-buffer feeds no longer trip it.\n                            (positionFrozen && bufferDuration < PlayerBufferingDangerZone)  &&",
+        "                            // same poll cadence; healthy thin-buffer feeds no longer trip it.\n"
+        + "                            // ReYohoho: 0.1s threshold — live-edge breathing at 0.3-0.5s is normal; pause/play\n"
+        + "                            // there triggers Twitch PAUSE_ADS and leaves the player stuck at t=0.\n"
+        + "                            // Also require readyState < 3: a HAVE_FUTURE_DATA+ element still has decodable\n"
+        + "                            // frames, so the frozen position is a transient live-edge lull, not a real stall.\n"
+        + "                            // Field log: pause/play fired at readyState=4 / bufferDuration=0.085 and tore the\n"
+        + "                            // IVS player down to t=0, cascading into repeated watchdog hard reloads.\n"
+        + "                            (positionFrozen && bufferDuration < 0.1 && (videoEl?.readyState ?? 0) < 3)  &&",
+        'buffer-monitor readyState guard'
+    );
+
+    // Patch 4: block Twitch PAUSE_ADS requests. When the ad endpoint is otherwise
+    // blocked, a PAUSE_ADS request fired on pause/play can wedge the player at a
+    // black screen + Play button. Returning an empty 204 keeps playback intact.
+    code = replaceOnce(
+        code,
+        "                if (url.includes('edge.ads.twitch.tv')) {\n                    const csaiType =",
+        "                if (url.includes('edge.ads.twitch.tv')) {\n"
+        + "                    if (url.includes('PAUSE_ADS')) {\n"
+        + "                        console.log('[AD DEBUG] Blocked PAUSE_ADS request — pause ads break playback when ad endpoint is blocked');\n"
+        + "                        return Promise.resolve(new Response('', { status: 204, statusText: 'No Content' }));\n"
+        + "                    }\n"
+        + "                    const csaiType =",
+        'block PAUSE_ADS request'
+    );
+
+    // Patch 5: brand the on-screen ad-block status text with the ReYohoho prefix.
+    code = replaceOnce(
+        code,
+        "adBlockDiv.P.textContent = 'Blocking'",
+        "adBlockDiv.P.textContent = 'ReYohoho: Blocking'",
+        'ReYohoho status prefix'
     );
 
     return code;

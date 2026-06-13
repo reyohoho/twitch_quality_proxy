@@ -1920,7 +1920,6 @@
         recoveryReloadUsed: false,
         userPauseIntent: false,
         loggedPauseIntent: false,
-        programmaticPause: false,
         weJustPaused: 0,
         inAdBreak: false,
         vaftEverUnmuted: false
@@ -1940,8 +1939,9 @@
                 if (video && !video.__tasIntentHooked) {
                     video.__tasIntentHooked = true;
                     video.addEventListener('pause', () => {
-                        if (playerBufferState.programmaticPause) return;
-                        playerBufferState.userPauseIntent = true;
+                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
+                            playerBufferState.userPauseIntent = true;
+                        }
                     });
                     video.addEventListener('play', () => {
                         playerBufferState.userPauseIntent = false;
@@ -2038,7 +2038,11 @@
                             // same poll cadence; healthy thin-buffer feeds no longer trip it.
                             // ReYohoho: 0.1s threshold — live-edge breathing at 0.3-0.5s is normal; pause/play
                             // there triggers Twitch PAUSE_ADS and leaves the player stuck at t=0.
-                            (positionFrozen && bufferDuration < 0.1)  &&
+                            // Also require readyState < 3: a HAVE_FUTURE_DATA+ element still has decodable
+                            // frames, so the frozen position is a transient live-edge lull, not a real stall.
+                            // Field log: pause/play fired at readyState=4 / bufferDuration=0.085 and tore the
+                            // IVS player down to t=0, cascading into repeated watchdog hard reloads.
+                            (positionFrozen && bufferDuration < 0.1 && (videoEl?.readyState ?? 0) < 3)  &&
                             playerBufferState.bufferedPosition == bufferedPosition &&
                             playerBufferState.bufferDuration >= bufferDuration &&
                             (position != 0 || bufferedPosition != 0 || bufferDuration != 0)
@@ -2362,19 +2366,15 @@
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
-            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
             playerBufferState.weJustPaused = Date.now();
-            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             return;
         }
         if (isReload && document.pictureInPictureElement) {
             // Downgrade to pause/play to preserve PiP — setSrc exits PiP
-            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
-            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             console.log('[AD DEBUG] Downgraded reload to pause/play to preserve PiP');
             return;
         }
@@ -2913,6 +2913,11 @@
                 if (typeof playerBufferState !== 'undefined') {
                     playerBufferState.userPauseIntent = false;
                     playerBufferState.loggedPauseIntent = false;
+                    // Mark our own reload so the next freeze check grants settling grace
+                    // (STALL_INITIAL_SECONDS instead of STALL_SECONDS). A freshly reloaded
+                    // hard-reset instance starts at t=0/readyState=0 and needs time to spin
+                    // up; without this the watchdog re-fired every ~15s and cascaded.
+                    playerBufferState.lastReloadAt = now;
                 }
                 if (!c.ps || !c.ps.state) { console.log('[ReYohoho WD] recovery aborted — no player state'); return; }
                 var video = c.video;
@@ -2975,7 +2980,7 @@
                 // only to an unexpected stall on already-playing content.
                 var inAd = (typeof playerBufferState !== 'undefined' && playerBufferState.inAdBreak) ? true : false;
                 var stripping = (typeof isActivelyStrippingAds !== 'undefined' && isActivelyStrippingAds) ? true : false;
-                var recentReload = (typeof playerBufferState !== 'undefined' && playerBufferState.lastReloadAt && (now - playerBufferState.lastReloadAt) < 12000) ? true : false;
+                var recentReload = (typeof playerBufferState !== 'undefined' && playerBufferState.lastReloadAt && (now - playerBufferState.lastReloadAt) < 20000) ? true : false;
                 var settling = (!everPlayed) || inAd || stripping || recentReload;
                 var threshold = settling ? STALL_INITIAL_SECONDS : STALL_SECONDS;
                 if (verbose && now - lastLogTs >= 2000) {
