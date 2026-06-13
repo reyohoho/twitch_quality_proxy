@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.5.1
+// @version      2.5.2
 // @description  Прокси для Twitch с поддержкой 1080p/1440p; опция «Скрыть Audio Only» в настройках плеера
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
@@ -911,7 +911,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.5.1';
+const VERSION = '2.5.2';
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
     "https://proxy7.rte.net.ru/",
@@ -3324,7 +3324,6 @@ function startObserver(getState) {
         recoveryReloadUsed: false,
         userPauseIntent: false,
         loggedPauseIntent: false,
-        programmaticPause: false,
         weJustPaused: 0,
         inAdBreak: false,
         vaftEverUnmuted: false
@@ -3344,8 +3343,9 @@ function startObserver(getState) {
                 if (video && !video.__tasIntentHooked) {
                     video.__tasIntentHooked = true;
                     video.addEventListener('pause', () => {
-                        if (playerBufferState.programmaticPause) return;
-                        playerBufferState.userPauseIntent = true;
+                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
+                            playerBufferState.userPauseIntent = true;
+                        }
                     });
                     video.addEventListener('play', () => {
                         playerBufferState.userPauseIntent = false;
@@ -3770,19 +3770,15 @@ function startObserver(getState) {
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
-            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
             playerBufferState.weJustPaused = Date.now();
-            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             return;
         }
         if (isReload && document.pictureInPictureElement) {
             // Downgrade to pause/play to preserve PiP — setSrc exits PiP
-            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
-            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             console.log('[AD DEBUG] Downgraded reload to pause/play to preserve PiP');
             return;
         }

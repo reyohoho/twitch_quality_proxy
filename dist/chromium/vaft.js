@@ -1926,7 +1926,6 @@ try {
         recoveryReloadUsed: false,
         userPauseIntent: false,
         loggedPauseIntent: false,
-        programmaticPause: false,
         weJustPaused: 0,
         inAdBreak: false,
         vaftEverUnmuted: false
@@ -1946,8 +1945,9 @@ try {
                 if (video && !video.__tasIntentHooked) {
                     video.__tasIntentHooked = true;
                     video.addEventListener('pause', () => {
-                        if (playerBufferState.programmaticPause) return;
-                        playerBufferState.userPauseIntent = true;
+                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
+                            playerBufferState.userPauseIntent = true;
+                        }
                     });
                     video.addEventListener('play', () => {
                         playerBufferState.userPauseIntent = false;
@@ -2372,19 +2372,15 @@ try {
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
-            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
             playerBufferState.weJustPaused = Date.now();
-            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             return;
         }
         if (isReload && document.pictureInPictureElement) {
             // Downgrade to pause/play to preserve PiP — setSrc exits PiP
-            playerBufferState.programmaticPause = true;
             player.pause();
             player.play()?.catch?.(() => {});
-            setTimeout(() => { playerBufferState.programmaticPause = false; }, 500);
             console.log('[AD DEBUG] Downgraded reload to pause/play to preserve PiP');
             return;
         }
