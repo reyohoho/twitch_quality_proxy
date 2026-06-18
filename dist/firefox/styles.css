@@ -75,6 +75,85 @@
     background: rgba(170, 170, 170, 0.15);
 }
 
+/* ============================================
+   Sponsor Block
+   ============================================ */
+
+.reyohoho-sponsor {
+    position: relative;
+    display: block;
+    margin: 10px 0 8px 0;
+    padding: 10px 8px 8px;
+    background: linear-gradient(135deg, rgba(145, 71, 255, 0.12) 0%, rgba(0, 0, 0, 0.25) 100%);
+    border: 1px solid rgba(145, 71, 255, 0.45);
+    border-radius: 6px;
+    text-decoration: none;
+    transition: all 0.15s ease;
+}
+
+.reyohoho-sponsor:hover {
+    border-color: rgba(145, 71, 255, 0.8);
+    background: linear-gradient(135deg, rgba(145, 71, 255, 0.2) 0%, rgba(0, 0, 0, 0.25) 100%);
+}
+
+.reyohoho-sponsor-label {
+    position: absolute;
+    top: -7px;
+    left: 8px;
+    padding: 1px 6px;
+    background: #9147ff;
+    color: #ffffff;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-radius: 3px;
+}
+
+.reyohoho-sponsor-body {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.reyohoho-sponsor-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    flex-shrink: 0;
+}
+
+.reyohoho-sponsor-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex: 1;
+    min-width: 0;
+}
+
+.reyohoho-sponsor-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reyohoho-sponsor-desc {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reyohoho-sponsor-arrow {
+    font-size: 13px;
+    color: #bf94ff;
+    flex-shrink: 0;
+}
+
 .reyohoho-options {
     display: flex;
     flex-direction: column;

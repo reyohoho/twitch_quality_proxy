@@ -231,6 +231,12 @@ function buildFirefox() {
         path.join(SRC_DIR, 'core', 'styles.css'),
         path.join(firefoxDir, 'styles.css')
     );
+
+    // Copy static assets (sponsor icon, etc.)
+    copyFile(
+        path.join(SRC_DIR, 'static', 'tubernet.png'),
+        path.join(firefoxDir, 'static', 'tubernet.png')
+    );
     
     console.log('Firefox extension built successfully!');
     return firefoxDir;
@@ -323,6 +329,12 @@ ${vaftCode}
     copyFile(
         path.join(SRC_DIR, 'core', 'styles.css'),
         path.join(chromiumDir, 'styles.css')
+    );
+
+    // Copy static assets (sponsor icon, etc.)
+    copyFile(
+        path.join(SRC_DIR, 'static', 'tubernet.png'),
+        path.join(chromiumDir, 'static', 'tubernet.png')
     );
     
     console.log('Chromium extension built successfully!');

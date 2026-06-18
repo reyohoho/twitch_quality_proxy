@@ -41,10 +41,22 @@ function getIrcProxyDisplay(extensionEnabled, ircProxy) {
     return { enabled, available, badgeStatus, badgeText };
 }
 
-function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
+// Show/hide the sponsor block on a single panel. Kept in the DOM (toggled via
+// display) so an async backend response can reveal it after injection without
+// re-rendering the whole panel. Fail-closed: anything other than `true` hides.
+function applyTubernetAdState(rootEl, tubernetAdEnabled) {
+    if (!rootEl) return;
+    const sponsor = rootEl.querySelector('.reyohoho-sponsor');
+    if (sponsor) {
+        sponsor.style.display = tubernetAdEnabled === true ? '' : 'none';
+    }
+}
+
+function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled) {
     const { onExtensionToggle, onVaftToggle, onIrcProxyToggle, onHideAudioOnlyToggle } = callbacks;
     const irc = getIrcProxyDisplay(extensionEnabled, ircProxy);
     const hideAudioOnlyEnabled = hideAudioOnly === true;
+    const sponsorDisplay = tubernetAdEnabled === true ? '' : 'none';
     
     const panel = document.createElement('div');
     panel.className = 'reyohoho-proxy-settings';
@@ -54,6 +66,17 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
       <span class="reyohoho-title">ReYohoho Proxy <span class="reyohoho-version">v${VERSION}</span></span>
       <span class="reyohoho-proxy-status" data-status="${proxyStatus.status}">${getStatusText(proxyStatus.status)}</span>
     </div>
+    <a href="${getSponsorUrl()}" target="_blank" rel="noopener noreferrer" class="reyohoho-sponsor" style="display: ${sponsorDisplay}">
+      <span class="reyohoho-sponsor-label">Спонсор</span>
+      <span class="reyohoho-sponsor-body">
+        <img class="reyohoho-sponsor-icon" src="${getSponsorIcon()}" alt="${SPONSOR_NAME}">
+        <span class="reyohoho-sponsor-text">
+          <span class="reyohoho-sponsor-name">${SPONSOR_NAME}</span>
+          <span class="reyohoho-sponsor-desc">${SPONSOR_DESC}</span>
+        </span>
+        <span class="reyohoho-sponsor-arrow">↗</span>
+      </span>
+    </a>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
         <span class="reyohoho-section-title">Прокси</span>
@@ -156,6 +179,10 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         e.stopPropagation();
     });
 
+    // Userscript fallback: render the sponsor icon via <canvas> to bypass the
+    // page CSP (Firefox blocks data: <img>). No-op inside the extensions.
+    renderSponsorIconFallback(panel);
+
     return panel;
 }
 
@@ -166,12 +193,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
 // argument would coerce to `false` and visually animate a user-enabled
 // toggle (e.g. Audio Only) into the OFF position without actually
 // changing any persisted state.
-function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy, hideAudioOnly) {
+function updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxy, hideAudioOnly, tubernetAdEnabled) {
     const irc = ircProxy !== undefined
         ? getIrcProxyDisplay(extensionEnabled, ircProxy)
         : null;
 
     document.querySelectorAll('.reyohoho-proxy-settings').forEach(panel => {
+        if (typeof tubernetAdEnabled === 'boolean') {
+            applyTubernetAdState(panel, tubernetAdEnabled);
+        }
         const extToggle = panel.querySelector('#reyohoho-ext-toggle');
         if (extToggle && typeof extensionEnabled === 'boolean') {
             extToggle.checked = extensionEnabled;
@@ -222,20 +252,20 @@ function updateProxyStatusInPanels(proxyStatus, ircProxy) {
     });
 }
 
-function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
+function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled) {
     if (!container || container.querySelector('.reyohoho-proxy-settings')) {
         return false;
     }
 
-    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly);
+    const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled);
     container.insertBefore(panel, container.firstChild);
     return true;
 }
 
-function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly) {
+function tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled) {
     const settingsMenu = document.querySelector('[data-a-target="player-settings-menu"]');
 
-    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly)) {
+    if (settingsMenu && injectIntoElement(settingsMenu, extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled)) {
         console.log('[ReYohoho] Injected into player settings menu');
         return true;
     }
@@ -269,7 +299,8 @@ function startObserver(getState) {
                 s.proxyStatus,
                 s.callbacks,
                 s.ircProxy,
-                s.hideAudioOnly
+                s.hideAudioOnly,
+                s.tubernetAdEnabled
             );
         }
     });
@@ -287,6 +318,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = { 
         getStatusText,
         getIrcProxyDisplay,
+        applyTubernetAdState,
         createSettingsPanel, 
         updateAllPanels,
         updateProxyStatusInPanels,

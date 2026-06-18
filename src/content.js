@@ -38,6 +38,10 @@
     let ircProxyAvailable = true;
     let hideAudioOnlyEnabled = false;
     let proxyStatus = { status: 'unknown' };
+    // Tubernet sponsor block gate. Fail-closed: starts hidden and is only
+    // revealed once the backend explicitly returns ad_enabled=true. A timeout,
+    // network error or `false` keeps it hidden.
+    let tubernetAdEnabled = false;
 
     // Check extension enabled synchronously from localStorage
     function isExtensionEnabledSync() {
@@ -284,7 +288,7 @@
             saveIrcProxyEnabledToLocalStorage(enabled);
             console.log(`[ReYohoho] IRC proxy ${enabled ? 'enabled' : 'disabled'}`);
             dispatchIrcProxyDrop(enabled ? 'toggle-on' : 'toggle-off');
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
         } catch (e) {
             console.error('[ReYohoho] Error saving IRC proxy state:', e);
         }
@@ -387,7 +391,8 @@
             proxyStatus,
             callbacks,
             ircProxy: ircProxyState(),
-            hideAudioOnly: hideAudioOnlyEnabled
+            hideAudioOnly: hideAudioOnlyEnabled,
+            tubernetAdEnabled
         };
     }
 
@@ -398,7 +403,7 @@
         
         // Periodic check
         setInterval(() => {
-            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState(), hideAudioOnlyEnabled);
+            tryInjectSettings(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
         }, 500);
         
         // Periodic status update
@@ -407,16 +412,32 @@
             updateProxyStatusInPanels(proxyStatus, ircProxyState());
         }, 5000);
 
+        // Resolve the Tubernet sponsor gate once on load. Fail-closed: only an
+        // explicit ad_enabled=true reveals the sponsor block; timeout/error/false
+        // keeps it hidden.
+        refreshTubernetAdEnabled();
+
         // Periodic IRC proxy availability probe. Runs once immediately so
         // the cached flag reflects current reality on a fresh page load.
         const ircInterval = typeof IRC_PROXY_CHECK_INTERVAL !== 'undefined' ? IRC_PROXY_CHECK_INTERVAL : 30000;
         checkIrcProxyAvailability().then(() => {
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
         });
         setInterval(async () => {
             await checkIrcProxyAvailability();
-            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+            updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
         }, ircInterval);
+    }
+
+    // Ask the backend whether the Tubernet sponsor block should be shown and
+    // push the result into any live panels.
+    async function refreshTubernetAdEnabled() {
+        try {
+            tubernetAdEnabled = await fetchTubernetAdEnabled();
+        } catch (e) {
+            tubernetAdEnabled = false;
+        }
+        updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
     }
 
     // Listen for storage changes (extensions)
@@ -425,11 +446,11 @@
             if (namespace === 'local') {
                 if (changes.extensionEnabled) {
                     extensionEnabled = changes.extensionEnabled.newValue;
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
                 }
                 if (changes.vaftEnabled) {
                     vaftEnabled = changes.vaftEnabled.newValue;
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
                 }
                 if (changes.ircProxyEnabled) {
                     ircProxyEnabled = changes.ircProxyEnabled.newValue;
@@ -438,12 +459,12 @@
                     // their active IRC sockets and reconnect via the new
                     // route without requiring a manual reload.
                     dispatchIrcProxyDrop(ircProxyEnabled ? 'toggle-on-sync' : 'toggle-off-sync');
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
                 }
                 if (changes.hideAudioOnlyEnabled) {
                     hideAudioOnlyEnabled = changes.hideAudioOnlyEnabled.newValue;
                     saveHideAudioOnlyToLocalStorage(hideAudioOnlyEnabled);
-                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled);
+                    updateAllPanels(extensionEnabled, vaftEnabled, proxyStatus, ircProxyState(), hideAudioOnlyEnabled, tubernetAdEnabled);
                 }
             }
         });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ReYohoho Twitch Proxy 1080p/1440p (Russia)",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Прокси для Twitch с поддержкой 1080p/1440p",
   "permissions": [
     "declarativeNetRequest",
@@ -14,7 +14,8 @@
     "https://*.twitch.tv/*",
     "https://usher.ttvnw.net/*",
     "wss://irc-ws.chat.twitch.tv/*",
-    "wss://ext.rte.net.ru/*"
+    "wss://ext.rte.net.ru/*",
+    "https://ext.rte.net.ru/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -62,7 +63,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "vaft.js"
+        "vaft.js",
+        "static/tubernet.png"
       ],
       "matches": [
         "https://*.twitch.tv/*"

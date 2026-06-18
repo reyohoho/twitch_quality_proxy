@@ -10,7 +10,8 @@
     "cookies",
     "storage",
     "https://usher.ttvnw.net/*",
-    "https://*.twitch.tv/*"
+    "https://*.twitch.tv/*",
+    "https://ext.rte.net.ru/*"
   ],
   "background": {
     "scripts": ["background.js"],
@@ -24,6 +25,7 @@
       "run_at": "document_start"
     }
   ],
+  "web_accessible_resources": ["static/tubernet.png"],
   "applications": {
     "gecko": {
       "id": "reyohoho-twitch-proxy2@rhhhhhhh.live",

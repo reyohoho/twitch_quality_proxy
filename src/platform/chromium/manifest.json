@@ -14,7 +14,8 @@
     "https://*.twitch.tv/*",
     "https://usher.ttvnw.net/*",
     "wss://irc-ws.chat.twitch.tv/*",
-    "wss://ext.rte.net.ru/*"
+    "wss://ext.rte.net.ru/*",
+    "https://ext.rte.net.ru/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -53,7 +54,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["vaft.js"],
+      "resources": ["vaft.js", "static/tubernet.png"],
       "matches": ["https://*.twitch.tv/*"]
     }
   ]
