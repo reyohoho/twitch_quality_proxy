@@ -103,6 +103,8 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
         var recoveryTimes = [];
         var everPlayed = false;// has the stream ever advanced this session (vs a never-started black screen)
         var lastChannel = null;
+        var neverStartedRecoveries = 0;// recoveries while !everPlayed (offline pages look like never-started stalls)
+        var channelUnavailable = false;// offline / playlist-404 — stop reload loops that flicker the player
         function currentChannelKey() {
             try {
                 var p = (location.pathname || '').split('?')[0].split('#')[0];
@@ -118,6 +120,25 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
         }
         function isLive(ps) {
             try { return !!(ps && ps.state && ps.state.props && ps.state.props.content && ps.state.props.content.type === 'live'); } catch (e) { return false; }
+        }
+        // Twitch offline channel shell (content.type can still be 'live' while playlist 404s).
+        function isOfflineDom() {
+            try {
+                return !!(document.querySelector('#offline-channel-main-content')
+                    || document.querySelector('[data-a-target="player-overlay-offline"]')
+                    || document.querySelector('[data-test-selector="offline-channel"]'));
+            } catch (e) { return false; }
+        }
+        // After a never-started hard reload, Idle+readyState=0 means the playlist never came up
+        // (offline / ErrorNotAvailable 404). Mid-stream stalls set everPlayed and are unaffected.
+        function isNeverStartedDead(c, now) {
+            try {
+                if (everPlayed || neverStartedRecoveries < 1 || !lastRecoveryTs) return false;
+                if ((now - lastRecoveryTs) < 8000) return false;
+                var state = c.player && c.player.getState ? c.player.getState() : '';
+                var video = c.video;
+                return state === 'Idle' && !!video && video.readyState === 0 && (video.buffered ? video.buffered.length === 0 : true);
+            } catch (e) { return false; }
         }
         function snap(reason, c) {
             try {
@@ -146,8 +167,16 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                 console.log('[ReYohoho WD] recovery SUPPRESSED — cap reached (' + recoveryTimes.length + ' in 5min); leaving player as-is');
                 return;
             }
+            // Offline / never-started dead players: at most one reload. Further attempts only
+            // re-404 the master playlist and flicker the UI; mid-stream stalls use everPlayed.
+            if (!everPlayed && neverStartedRecoveries >= 1) {
+                channelUnavailable = true;
+                console.log('[ReYohoho WD] recovery SUPPRESSED — never-started after prior reload (likely offline)');
+                return;
+            }
             recoveryTimes.push(now);
             lastRecoveryTs = now;
+            if (!everPlayed) neverStartedRecoveries++;
             snap('RECOVERY ' + (hardReload ? 'hard' : 'soft') + ' reload (forced)', c);
             try {
                 if (typeof playerBufferState !== 'undefined') {
@@ -189,7 +218,14 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                 if (!c.player || !c.video) { lastTime = -1; frozenSinceTs = 0; return; }
                 if (!isLive(c.ps)) { lastTime = -1; frozenSinceTs = 0; return; }
                 var chan = currentChannelKey();
-                if (chan !== lastChannel) { lastChannel = chan; everPlayed = false; frozenSinceTs = 0; lastTime = -1; }
+                if (chan !== lastChannel) {
+                    lastChannel = chan;
+                    everPlayed = false;
+                    frozenSinceTs = 0;
+                    lastTime = -1;
+                    neverStartedRecoveries = 0;
+                    channelUnavailable = false;
+                }
                 var video = c.video;
                 var ct = video.currentTime;
                 var bufEnd = (video.buffered && video.buffered.length) ? video.buffered.end(video.buffered.length - 1) : 0;
@@ -197,9 +233,22 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                 var advancing = (lastTime >= 0) && Math.abs(ct - lastTime) > 0.05;
                 lastTime = ct;
                 if (advancing || video.ended) {
-                    if (advancing) everPlayed = true;
+                    if (advancing) {
+                        everPlayed = true;
+                        neverStartedRecoveries = 0;
+                        channelUnavailable = false;
+                    }
                     if (frozenSinceTs !== 0 && verbose) {
                         console.log('[ReYohoho WD] recovered (advancing) after ' + ((now - frozenSinceTs) / 1000).toFixed(1) + 's, t=' + ct.toFixed(2));
+                    }
+                    frozenSinceTs = 0;
+                    return;
+                }
+                // Offline channel / failed never-started reload — do not hard-reload loop.
+                if (channelUnavailable || isOfflineDom() || isNeverStartedDead(c, now)) {
+                    if (!channelUnavailable) {
+                        channelUnavailable = true;
+                        if (verbose) snap('offline/unavailable — suppressing recovery', c);
                     }
                     frozenSinceTs = 0;
                     return;
