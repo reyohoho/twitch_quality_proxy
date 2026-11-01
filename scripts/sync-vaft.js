@@ -201,7 +201,8 @@ const STALL_WATCHDOG = `    // === ReYohoho: stall-recovery watchdog + verbose d
                         document.removeEventListener('canplay', lis, true);
                         document.removeEventListener('playing', lis, true);
                         document.removeEventListener('loadeddata', lis, true);
-                        try { var cur = document.querySelector('video'); if (cur) cur.muted = false; } catch (e) {}
+                        // Player-owned element, not the first <video> in the DOM: Twitch side/chat ad videos (#249) can come first.
+                        try { var cur = ctx().video || video; if (cur) cur.muted = false; } catch (e) {}
                     };
                     var lis = function (e) { if (e.target && e.target.tagName === 'VIDEO') restore(); };
                     document.addEventListener('canplay', lis, true);
@@ -371,7 +372,7 @@ async function main() {
     ].join('\n');
     const body = applyReyohohoPatches(stripUserscriptHeader(raw));
     fs.writeFileSync(OUT, header + body);
-    console.log(`Synced VAFT v${version} (+ ReYohoho pbp-backup patch) -> ${OUT}`);
+    console.log(`Synced VAFT v${version} (+ ReYohoho patches) -> ${OUT}`);
 }
 
 main().catch((e) => {
