@@ -193,17 +193,33 @@ const ok = (cond, msg, out) => assert.ok(cond, msg + '\n' + out);
     }
 }
 
+{ // Jumps, switches and time-check escapes are logged when a logger is given.
+    const lines = [];
+    let seq = createMediaSequencer((m) => lines.push(m));
+    seq.rewrite('v', 'primary', plain(100, 3), false);
+    seq.rewrite('v', 'backup b', plain(5000, 2), false);
+    assert.deepStrictEqual(lines, ['backup b jumps to 103'], 'jump logged');
+    lines.length = 0;
+    seq = createMediaSequencer((m) => lines.push(m));
+    seq.rewrite('v', 'primary', timed(100, 0, 9), false);
+    for (let poll = 0; poll < 3; poll++) seq.rewrite('v', 'backup b', timed(5000, 6 + poll, 10 + poll, 10), false);
+    seq.rewrite('v', 'backup b', timed(5000, 9, 13, 10), false);
+    assert.deepStrictEqual(lines, ['backup b held back 3 polls in a row by time', 'backup b jumps to 110 (time check dropped)'], 'escape logged');
+}
 { // The glue as shipped in vaft.js: per-master sequencer, kill switch, fallback to VAFT's text.
     const self = {};
+    const logged = [];
+    const console = { log: (m) => logged.push(m) };
     const StreamInfosByUrl = { 'https://v/1080.m3u8': { IsShowingAd: false, ActiveBackupPlayerType: null } };
     const createSeq = load('createMediaSequencer', {});
-    const sequenceM3U8 = load('sequenceM3U8', { self, StreamInfosByUrl, createMediaSequencer: createSeq });
+    const sequenceM3U8 = load('sequenceM3U8', { self, console, StreamInfosByUrl, createMediaSequencer: createSeq });
     const url = 'https://v/1080.m3u8';
     let out = sequenceM3U8(url, plain(100, 3));
     ok(out.includes('#EXT-X-MEDIA-SEQUENCE:100\n'), 'glue sequences', out);
     StreamInfosByUrl[url].ActiveBackupPlayerType = 'embed';
     out = sequenceM3U8(url, plain(5000, 2));
     ok(out.includes('#EXT-X-MEDIA-SEQUENCE:103\n#EXT-X-DISCONTINUITY\n'), 'backup player type is the source', out);
+    assert.deepStrictEqual(logged, ['[ReYohoho] sequencer: embed jumps to 103'], 'glue logs to the console');
     assert.strictEqual(sequenceM3U8('https://v/unknown.m3u8', 'x'), 'x', 'unknown variant passes through');
     StreamInfosByUrl[url].ReyohohoSequencer = { rewrite() { throw new Error('boom'); } };
     assert.strictEqual(sequenceM3U8(url, plain(1, 1)), plain(1, 1), 'failure serves VAFT text');

@@ -379,6 +379,7 @@
                     DisableAdSpoofing = ${DisableAdSpoofing};
                     SoftReloadNoStrip = ${SoftReloadNoStrip};
                     self.ReyohohoSequencerEnabled = ${(function () { try { return localStorage.getItem('reyohoho_media_sequencer') !== 'false'; } catch (e) { return true; } })()};
+                    self.ReyohohoSkipBreakReload = ${(function () { try { return localStorage.getItem('reyohoho_skip_break_reload') === 'true'; } catch (e) { return false; } })()};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -575,7 +576,9 @@
 // session), so another session lines up with what was served, without a gap.
 // A single clean source keeps its numbering untouched.
 // Self-contained on purpose: VAFT copies it into the player worker via toString().
-function createMediaSequencer() {
+// `log` (optional) gets a line per jump, switch and time-check escape.
+function createMediaSequencer(log) {
+    const say = typeof log === 'function' ? log : function () {};
     const MAPPED_SEGMENTS = 768;
     // Polls in a row whose new segments were all held back by the time check:
     // then the check goes, a source with a lagging clock must not stall playback.
@@ -708,6 +711,7 @@ function createMediaSequencer() {
                         // Same broadcast timeline from another session: mark the switch,
                         // past the prefetch hints already served (they may have been an ad).
                         switchAt = Math.max(s.seq, reservedSeq);
+                        say(String(source).slice(0, 16) + ' lines up at ' + s.seq + ', switch marked at ' + switchAt);
                     }
                 } else if (nextSeq < 0) {
                     s.seq = s.sourceSeq;
@@ -724,6 +728,7 @@ function createMediaSequencer() {
                     s.seq = Math.max(nextSeq, reservedSeq);
                     discontinuities.add(s.seq);
                     switchAt = -1;
+                    say(String(source).slice(0, 16) + ' jumps to ' + s.seq + (escape ? ' (time check dropped)' : ''));
                 }
                 if (s.discontinuity) discontinuities.add(s.seq);
                 if (switchAt >= 0 && s.seq >= switchAt) {
@@ -741,8 +746,8 @@ function createMediaSequencer() {
         }
         if (servedNew) {
             heldPolls = 0;
-        } else if (heldBack) {
-            heldPolls++;
+        } else if (heldBack && ++heldPolls === MAX_HELD_POLLS) {
+            say(String(source).slice(0, 16) + ' held back ' + heldPolls + ' polls in a row by time');
         }
         kept = numbered;
         if (kept.length === 0) return null;
@@ -802,7 +807,7 @@ function createMediaSequencer() {
             return textStr;
         }
         try {
-            if (!streamInfo.ReyohohoSequencer) streamInfo.ReyohohoSequencer = createMediaSequencer();
+            if (!streamInfo.ReyohohoSequencer) streamInfo.ReyohohoSequencer = createMediaSequencer(function (msg) { console.log('[ReYohoho] sequencer: ' + msg); });
             const sequencer = streamInfo.ReyohohoSequencer;
             return sequencer.rewrite(url, streamInfo.ActiveBackupPlayerType || 'primary', textStr, !!streamInfo.IsShowingAd)
                 || sequencer.last(url) || textStr;
@@ -2047,6 +2052,9 @@ function createMediaSequencer() {
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
+                    const reyohohoKeepPlaying = self.ReyohohoSkipBreakReload === true && self.ReyohohoSequencerEnabled !== false
+                        && !streamInfo.IsUsingModifiedM3U8 && !!streamInfo.LastCommittedBackupPlayerType && streamInfo.LastCommittedBackupPlayerType !== 'autoplay';
+                    if (reyohohoKeepPlaying) console.log('[ReYohoho] end-of-break reload skipped (experiment): the sequencer marks the switch back from ' + streamInfo.LastCommittedBackupPlayerType);
                     streamInfo.IsUsingModifiedM3U8 = false;
                     // Exception: if ANY backup was committed during this break (escape hatch
                     // or cycle rescue that didn't meet cycleRescuedCleanly criteria), the
@@ -2057,7 +2065,7 @@ function createMediaSequencer() {
                     // to flush the MediaSource buffer + refresh the access token.
                     // For autoplay (360p) specifically, the reload also restores Source
                     // quality (autoplay-scoped token only serves 360p variant ladder).
-                    if (streamInfo.LastCommittedBackupPlayerType) {
+                    if (streamInfo.LastCommittedBackupPlayerType && !reyohohoKeepPlaying) {
                         const isAutoplay = streamInfo.LastCommittedBackupPlayerType === 'autoplay';
                         const reason = isAutoplay ? 'autoplay (360p) — restoring Source quality' : streamInfo.LastCommittedBackupPlayerType + ' — flushing MediaSource to prevent A/V desync accumulation';
                         console.log('[AD DEBUG] End-of-break reload: ' + reason);
@@ -2687,8 +2695,8 @@ function createMediaSequencer() {
             if (adBlockDiv == null) {
                 adBlockDiv = document.createElement('div');
                 adBlockDiv.className = 'tas-adblock-overlay';
-                adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 12px; background: rgba(24, 24, 27, 0.88); border: 1px solid rgba(145, 71, 255, 0.55); color: #efeff1; font: 600 12px/1.3 Inter, Roobert, Arial, sans-serif; pointer-events: none;">'
-                    + '<span style="display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: #9147ff; flex-shrink: 0;"><svg viewBox="0 0 20 20" width="10" height="10" aria-hidden="true"><path d="M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z" fill="#fff"/></svg></span>'
+                adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 3px; border-radius: 9px; background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.78); font: 500 11px/1.3 Inter, Roobert, Arial, sans-serif; white-space: nowrap; pointer-events: none;">'
+                    + '<span style="display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(145, 71, 255, 0.85); flex-shrink: 0;"><svg viewBox="0 0 20 20" width="8" height="8" aria-hidden="true"><path d="M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z" fill="#fff"/></svg></span>'
                     + '<p style="margin: 0;"></p></div>';
                 adBlockDiv.style.display = 'none';
                 adBlockDiv.P = adBlockDiv.querySelector('p');
@@ -2696,7 +2704,7 @@ function createMediaSequencer() {
             }
             if (adBlockDiv != null) {
                 isActivelyStrippingAds = data.isStrippingAdSegments;
-                adBlockDiv.P.textContent = 'ReYohoho · блокируем ' + (data.isMidroll ? 'мидролл' : 'рекламу') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
+                adBlockDiv.P.textContent = 'Реклама скрыта' + (data.isMidroll ? ' · мидролл' : '') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
                 adBlockDiv.style.display = data.hasAds && playerBufferState.isLive && playerRootDiv.clientWidth >= 480 ? 'block' : 'none';
             }
             if (data.hasAds) {

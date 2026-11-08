@@ -20,6 +20,7 @@
  *   3-5. Buffer-monitor readyState guard, PAUSE_ADS block, ad banner look.
  *   6. CLASS="twitch-trigger" counts as an ad only next to a non-live segment.
  *   7. MediaSequencer (src/core/media-sequencer.js) on the served media playlists.
+ *   8. Experiment (off by default): no end-of-break reload after a clean backup.
  */
 const fs = require('fs');
 const path = require('path');
@@ -351,21 +352,23 @@ function applyReyohohoPatches(code) {
         'block PAUSE_ADS request'
     );
 
-    // Patch 5: the on-screen ad-block banner in the ReYohoho panel style (a pill
-    // with the logo mark, Russian text). Styles stay inline: the banner lives in
-    // the page and must look the same in every build. Clicks pass through it.
+    // Patch 5: a small, quiet ad-block badge (logo mark + "Реклама скрыта" and
+    // how: midroll, backup player type or stripping): translucent, muted, no
+    // accent border, so it doesn't pull the eye off the stream. Styles stay
+    // inline: the badge lives in the page and must look the same in every
+    // build. Clicks pass through it.
     code = replaceOnce(
         code,
         "adBlockDiv.innerHTML = '<div class=\"player-adblock-notice\" style=\"color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;\"><p></p></div>';",
-        "adBlockDiv.innerHTML = '<div class=\"player-adblock-notice\" style=\"position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 12px; background: rgba(24, 24, 27, 0.88); border: 1px solid rgba(145, 71, 255, 0.55); color: #efeff1; font: 600 12px/1.3 Inter, Roobert, Arial, sans-serif; pointer-events: none;\">'\n"
-        + "                    + '<span style=\"display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: #9147ff; flex-shrink: 0;\"><svg viewBox=\"0 0 20 20\" width=\"10\" height=\"10\" aria-hidden=\"true\"><path d=\"M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z\" fill=\"#fff\"/></svg></span>'\n"
+        "adBlockDiv.innerHTML = '<div class=\"player-adblock-notice\" style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 3px; border-radius: 9px; background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.78); font: 500 11px/1.3 Inter, Roobert, Arial, sans-serif; white-space: nowrap; pointer-events: none;\">'\n"
+        + "                    + '<span style=\"display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; background: rgba(145, 71, 255, 0.85); flex-shrink: 0;\"><svg viewBox=\"0 0 20 20\" width=\"8\" height=\"8\" aria-hidden=\"true\"><path d=\"M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z\" fill=\"#fff\"/></svg></span>'\n"
         + "                    + '<p style=\"margin: 0;\"></p></div>';",
         'ReYohoho ad banner look'
     );
     code = replaceOnce(
         code,
         "adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');",
-        "adBlockDiv.P.textContent = 'ReYohoho · блокируем ' + (data.isMidroll ? 'мидролл' : 'рекламу') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));",
+        "adBlockDiv.P.textContent = 'Реклама скрыта' + (data.isMidroll ? ' · мидролл' : '') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));",
         'ReYohoho ad banner text'
     );
     // No banner on a small player (Twitch's corner mini player): it covered the picture.
@@ -411,7 +414,7 @@ function applyReyohohoPatches(code) {
         + '            return textStr;\n'
         + '        }\n'
         + '        try {\n'
-        + '            if (!streamInfo.ReyohohoSequencer) streamInfo.ReyohohoSequencer = createMediaSequencer();\n'
+        + '            if (!streamInfo.ReyohohoSequencer) streamInfo.ReyohohoSequencer = createMediaSequencer(function (msg) { console.log(\'[ReYohoho] sequencer: \' + msg); });\n'
         + '            const sequencer = streamInfo.ReyohohoSequencer;\n'
         + '            return sequencer.rewrite(url, streamInfo.ActiveBackupPlayerType || \'primary\', textStr, !!streamInfo.IsShowingAd)\n'
         + '                || sequencer.last(url) || textStr;\n'
@@ -435,8 +438,31 @@ function applyReyohohoPatches(code) {
         code,
         '                    SoftReloadNoStrip = ${SoftReloadNoStrip};',
         '                    SoftReloadNoStrip = ${SoftReloadNoStrip};\n'
-        + "                    self.ReyohohoSequencerEnabled = ${(function () { try { return localStorage.getItem('reyohoho_media_sequencer') !== 'false'; } catch (e) { return true; } })()};",
-        'media sequencer toggle'
+        + "                    self.ReyohohoSequencerEnabled = ${(function () { try { return localStorage.getItem('reyohoho_media_sequencer') !== 'false'; } catch (e) { return true; } })()};\n"
+        + "                    self.ReyohohoSkipBreakReload = ${(function () { try { return localStorage.getItem('reyohoho_skip_break_reload') === 'true'; } catch (e) { return false; } })()};",
+        'media sequencer toggles'
+    );
+    // Patch 8 (experiment, opt-in with localStorage reyohoho_skip_break_reload=true):
+    // a break served from a clean backup ends in a hard player reload that guards
+    // against A/V drift from mixed sources. The sequencer marks the switch back
+    // with a DISCONTINUITY, so the player may cope without it. Kept: autoplay
+    // (reload restores Source quality) and a swapped master (HEVC/AV1 -> AVC).
+    code = replaceOnce(
+        code,
+        "console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');\n"
+        + '                    streamInfo.IsUsingModifiedM3U8 = false;',
+        "console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');\n"
+        + '                    const reyohohoKeepPlaying = self.ReyohohoSkipBreakReload === true && self.ReyohohoSequencerEnabled !== false\n'
+        + "                        && !streamInfo.IsUsingModifiedM3U8 && !!streamInfo.LastCommittedBackupPlayerType && streamInfo.LastCommittedBackupPlayerType !== 'autoplay';\n"
+        + "                    if (reyohohoKeepPlaying) console.log('[ReYohoho] end-of-break reload skipped (experiment): the sequencer marks the switch back from ' + streamInfo.LastCommittedBackupPlayerType);\n"
+        + '                    streamInfo.IsUsingModifiedM3U8 = false;',
+        'skip end-of-break reload flag'
+    );
+    code = replaceOnce(
+        code,
+        '                    if (streamInfo.LastCommittedBackupPlayerType) {',
+        '                    if (streamInfo.LastCommittedBackupPlayerType && !reyohohoKeepPlaying) {',
+        'skip end-of-break reload'
     );
     code = replaceOnce(
         code,

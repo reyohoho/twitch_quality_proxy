@@ -19,7 +19,9 @@
 // session), so another session lines up with what was served, without a gap.
 // A single clean source keeps its numbering untouched.
 // Self-contained on purpose: VAFT copies it into the player worker via toString().
-function createMediaSequencer() {
+// `log` (optional) gets a line per jump, switch and time-check escape.
+function createMediaSequencer(log) {
+    const say = typeof log === 'function' ? log : function () {};
     const MAPPED_SEGMENTS = 768;
     // Polls in a row whose new segments were all held back by the time check:
     // then the check goes, a source with a lagging clock must not stall playback.
@@ -152,6 +154,7 @@ function createMediaSequencer() {
                         // Same broadcast timeline from another session: mark the switch,
                         // past the prefetch hints already served (they may have been an ad).
                         switchAt = Math.max(s.seq, reservedSeq);
+                        say(String(source).slice(0, 16) + ' lines up at ' + s.seq + ', switch marked at ' + switchAt);
                     }
                 } else if (nextSeq < 0) {
                     s.seq = s.sourceSeq;
@@ -168,6 +171,7 @@ function createMediaSequencer() {
                     s.seq = Math.max(nextSeq, reservedSeq);
                     discontinuities.add(s.seq);
                     switchAt = -1;
+                    say(String(source).slice(0, 16) + ' jumps to ' + s.seq + (escape ? ' (time check dropped)' : ''));
                 }
                 if (s.discontinuity) discontinuities.add(s.seq);
                 if (switchAt >= 0 && s.seq >= switchAt) {
@@ -185,8 +189,8 @@ function createMediaSequencer() {
         }
         if (servedNew) {
             heldPolls = 0;
-        } else if (heldBack) {
-            heldPolls++;
+        } else if (heldBack && ++heldPolls === MAX_HELD_POLLS) {
+            say(String(source).slice(0, 16) + ' held back ' + heldPolls + ' polls in a row by time');
         }
         kept = numbered;
         if (kept.length === 0) return null;
