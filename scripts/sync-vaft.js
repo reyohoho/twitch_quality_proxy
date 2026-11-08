@@ -19,6 +19,7 @@
  *      break), with verbose [ReYohoho WD] diagnostics.
  *   3-5. Buffer-monitor readyState guard, PAUSE_ADS block, status prefix.
  *   6. CLASS="twitch-trigger" counts as an ad only next to a non-live segment.
+ *   7. MediaSequencer (src/core/media-sequencer.js) on the served media playlists.
  */
 const fs = require('fs');
 const path = require('path');
@@ -373,6 +374,65 @@ function applyReyohohoPatches(code) {
         return textStr.includes(trigger) && /^#EXTINF:(?![^\n]*,live)/m.test(textStr);
     }`,
         'twitch-trigger needs a non-live segment'
+    );
+
+    // Patch 7: MediaSequencer (src/core/media-sequencer.js, port of ReTwitch's):
+    // one numbering per master across the sources VAFT serves, DISCONTINUITY on
+    // jumps, no replay of time already played. Runs on VAFT's finished media
+    // playlist in the worker; off with localStorage reyohoho_media_sequencer=false;
+    // any failure serves VAFT's playlist unchanged.
+    const sequencerSource = fs.readFileSync(path.join(ROOT, 'src', 'core', 'media-sequencer.js'), 'utf8')
+        .split('\nif (typeof module')[0];
+    code = replaceOnce(
+        code,
+        '    // Hook fetch() in the worker scope to intercept m3u8 playlist requests and ad segments',
+        sequencerSource + '\n'
+        + '    // ReYohoho: feed VAFT\'s finished media playlist through the master\'s sequencer.\n'
+        + '    function sequenceM3U8(url, textStr) {\n'
+        + '        const streamInfo = StreamInfosByUrl[url];\n'
+        + '        if (self.ReyohohoSequencerEnabled === false || !streamInfo || typeof textStr !== \'string\' || textStr.indexOf(\'#EXTINF\') === -1) {\n'
+        + '            return textStr;\n'
+        + '        }\n'
+        + '        try {\n'
+        + '            if (!streamInfo.ReyohohoSequencer) streamInfo.ReyohohoSequencer = createMediaSequencer();\n'
+        + '            const sequencer = streamInfo.ReyohohoSequencer;\n'
+        + '            return sequencer.rewrite(url, streamInfo.ActiveBackupPlayerType || \'primary\', textStr, !!streamInfo.IsShowingAd)\n'
+        + '                || sequencer.last(url) || textStr;\n'
+        + '        } catch (e) {\n'
+        + '            console.log(\'[ReYohoho] sequencer failed, serving the VAFT playlist: \' + e);\n'
+        + '            return textStr;\n'
+        + '        }\n'
+        + '    }\n'
+        + '    // Hook fetch() in the worker scope to intercept m3u8 playlist requests and ad segments',
+        'media sequencer definition'
+    );
+    code = replaceOnce(
+        code,
+        '                    ${processM3U8.toString()}',
+        '                    ${processM3U8.toString()}\n'
+        + '                    ${createMediaSequencer.toString()}\n'
+        + '                    ${sequenceM3U8.toString()}',
+        'media sequencer into the worker'
+    );
+    code = replaceOnce(
+        code,
+        '                    SoftReloadNoStrip = ${SoftReloadNoStrip};',
+        '                    SoftReloadNoStrip = ${SoftReloadNoStrip};\n'
+        + "                    self.ReyohohoSequencerEnabled = ${(function () { try { return localStorage.getItem('reyohoho_media_sequencer') !== 'false'; } catch (e) { return true; } })()};",
+        'media sequencer toggle'
+    );
+    code = replaceOnce(
+        code,
+        'resolve(new Response(await processM3U8(url, await response.text(), realFetch)));',
+        'resolve(new Response(sequenceM3U8(url, await processM3U8(url, await response.text(), realFetch))));',
+        'media sequencer on media playlists'
+    );
+    code = replaceOnce(
+        code,
+        '                                resolve(new Response(replaceServerTimeInM3u8(streamInfo.IsUsingModifiedM3U8 ? streamInfo.ModifiedM3U8 : streamInfo.EncodingsM3U8, serverTime)));',
+        '                                streamInfo.ReyohohoSequencer = null;// ReYohoho: a new player instance starts its numbering afresh\n'
+        + '                                resolve(new Response(replaceServerTimeInM3u8(streamInfo.IsUsingModifiedM3U8 ? streamInfo.ModifiedM3U8 : streamInfo.EncodingsM3U8, serverTime)));',
+        'media sequencer reset per master'
     );
 
     return code;
