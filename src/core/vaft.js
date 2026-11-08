@@ -733,7 +733,10 @@
         return newServerTime ? encodingsM3u8.replace(/(SERVER-TIME=")[0-9.]+"/, `SERVER-TIME="${newServerTime}"`) : encodingsM3u8;
     }
     function hasAdTags(textStr) {
-        return AdSignifiers.some((s) => s && textStr.includes(s));
+        // ReYohoho: twitch-trigger alone also rides clean live playlists, so it needs a non-",live" segment.
+        const trigger = 'EXT-X-DATERANGE:CLASS="twitch-trigger"';
+        if (AdSignifiers.some((s) => s && s !== trigger && textStr.includes(s))) return true;
+        return textStr.includes(trigger) && /^#EXTINF:(?![^\n]*,live)/m.test(textStr);
     }
     // Spoof ad completion to Twitch's GQL endpoint when an ad break is detected.
     // Twitch's player would normally fire video_ad_impression / video_ad_quartile_complete

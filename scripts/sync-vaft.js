@@ -17,6 +17,8 @@
  *   2. Stall-recovery watchdog: forces a reload when the playhead freezes with
  *      a drained buffer (black screen + Play button after a contaminated ad
  *      break), with verbose [ReYohoho WD] diagnostics.
+ *   3-5. Buffer-monitor readyState guard, PAUSE_ADS block, status prefix.
+ *   6. CLASS="twitch-trigger" counts as an ad only next to a non-live segment.
  */
 const fs = require('fs');
 const path = require('path');
@@ -354,6 +356,23 @@ function applyReyohohoPatches(code) {
         "adBlockDiv.P.textContent = 'Blocking'",
         "adBlockDiv.P.textContent = 'ReYohoho: Blocking'",
         'ReYohoho status prefix'
+    );
+
+    // Patch 6: CLASS="twitch-trigger" also rides clean live playlists after a
+    // source switch (ReTwitch field logs, 2026-11). Counted as an ad on its own it
+    // strips the prefetch hints (latency grows) and makes clean backups look
+    // ad-laden (fallback to autoplay 360p). Alone it now counts only next to a
+    // segment not tagged ",live"; every other signifier counts as before.
+    code = replaceOnce(
+        code,
+        "    function hasAdTags(textStr) {\n        return AdSignifiers.some((s) => s && textStr.includes(s));\n    }",
+        String.raw`    function hasAdTags(textStr) {
+        // ReYohoho: twitch-trigger alone also rides clean live playlists, so it needs a non-",live" segment.
+        const trigger = 'EXT-X-DATERANGE:CLASS="twitch-trigger"';
+        if (AdSignifiers.some((s) => s && s !== trigger && textStr.includes(s))) return true;
+        return textStr.includes(trigger) && /^#EXTINF:(?![^\n]*,live)/m.test(textStr);
+    }`,
+        'twitch-trigger needs a non-live segment'
     );
 
     return code;
