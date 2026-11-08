@@ -182,7 +182,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.7.1';
+const VERSION = '2.7.2';
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
     "https://proxy7.rte.net.ru/",
@@ -245,8 +245,12 @@ async function checkProxyProvider(provider, channel = PROVIDER_CHECK_CHANNEL, au
     const started = Date.now();
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), PROVIDER_CHECK_TIMEOUT);
+    // Firefox MV2 content scripts get a NetworkError for hosts outside the manifest
+    // permissions (even with CORS *); content.fetch sends it as the page, like Chrome.
+    const pageFetch = typeof content === 'object' && content && typeof content.fetch === 'function'
+        ? (u, o) => content.fetch(u, o) : fetch;
     try {
-        const res = await fetch(url, { cache: 'no-store', headers, signal: ctrl.signal });
+        const res = await pageFetch(url, { cache: 'no-store', headers, signal: ctrl.signal });
         const text = res.ok ? await res.text() : '';
         if (!text.startsWith('#EXTM3U')) return { ok: false, code: res.status };
         // v2 master: "USER-COUNTRY",VALUE="NL"; v1: USER-COUNTRY="NL"
