@@ -41,6 +41,37 @@ function getIrcProxyDisplay(extensionEnabled, ircProxy) {
     return { enabled, available, badgeStatus, badgeText };
 }
 
+// One provider health check as text: absent / running / ok / failed.
+function providerCheckText(check) {
+    if (!check) return 'не проверен';
+    if (check.checking) return 'проверка…';
+    if (check.ok) return '✓ выход ' + (check.country || '??') + ' · ' + check.ms + ' мс';
+    return '✕ ' + (check.code ? 'HTTP ' + check.code : 'нет ответа');
+}
+
+// Option labels and the line under the picker. `state` = { id, checks, currentId }
+// from callbacks.getProviderState(); currentId is the ReYohoho server in use.
+function renderProviderSection(panel, state) {
+    const select = panel.querySelector('#reyohoho-provider-select');
+    const desc = panel.querySelector('.reyohoho-provider-desc');
+    if (!select || !desc || !state) return;
+    for (const option of select.options) {
+        const check = state.checks[option.value];
+        option.textContent = getProxyProvider(option.value).label + (check ? ' — ' + providerCheckText(check) : '');
+    }
+    select.value = state.id;
+    const selected = getProxyProvider(state.id);
+    const shown = selected.id === 'auto' ? PROXY_PROVIDERS.find((p) => p.id === state.currentId) : selected;
+    const kind = selected.live
+        ? 'Только трансляции, без вашего аккаунта (до 1080p), записи — через ReYohoho.'
+        : selected.id === 'auto' ? 'Первый доступный сервер ReYohoho.' : 'Этот сервер первым, остальные — запасные.';
+    desc.textContent = kind + (shown ? ' ' + shown.label + ': ' + providerCheckText(state.checks[shown.id]) : '');
+}
+
+function updateProviderInPanels(state) {
+    document.querySelectorAll('.reyohoho-proxy-settings').forEach((panel) => renderProviderSection(panel, state));
+}
+
 // Show/hide the sponsor block on a single panel. Kept in the DOM (toggled via
 // display) so an async backend response can reveal it after injection without
 // re-rendering the whole panel. Fail-closed: anything other than `true` hides.
@@ -86,6 +117,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         </label>
       </div>
       <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
+    </div>
+    <div class="reyohoho-section">
+      <div class="reyohoho-section-header">
+        <label class="reyohoho-section-title" for="reyohoho-provider-select">Сервер плейлистов</label>
+      </div>
+      <select class="reyohoho-provider-select" id="reyohoho-provider-select">
+        ${PROXY_PROVIDERS.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}
+      </select>
+      <span class="reyohoho-section-desc reyohoho-provider-desc"></span>
     </div>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
@@ -137,6 +177,20 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         extToggle.addEventListener('change', (e) => {
             e.stopPropagation();
             if (onExtensionToggle) onExtensionToggle(e.target.checked);
+        });
+    }
+
+    // Provider picker: checks run when the user opens it (not on every menu
+    // open, so 90k viewers don't keep probing third-party servers).
+    const providerSelect = panel.querySelector('#reyohoho-provider-select');
+    if (providerSelect) {
+        renderProviderSection(panel, callbacks.getProviderState && callbacks.getProviderState());
+        providerSelect.addEventListener('focus', () => {
+            if (callbacks.onProviderCheck) callbacks.onProviderCheck();
+        });
+        providerSelect.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (callbacks.onProviderChange) callbacks.onProviderChange(e.target.value);
         });
     }
 
@@ -259,6 +313,7 @@ function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus
 
     const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled);
     container.insertBefore(panel, container.firstChild);
+    if (callbacks && callbacks.onPanelShown) callbacks.onPanelShown();
     return true;
 }
 
@@ -318,6 +373,9 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = { 
         getStatusText,
         getIrcProxyDisplay,
+        providerCheckText,
+        renderProviderSection,
+        updateProviderInPanels,
         applyTubernetAdState,
         createSettingsPanel, 
         updateAllPanels,

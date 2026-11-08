@@ -11,6 +11,59 @@ const PROXY_SERVERS = [
     "https://proxy6.rte.net.ru/"
 ];
 
+// Playlist servers the user can pick in the panel. 'auto' (default) = first
+// reachable PROXY_SERVERS entry; a ReYohoho server = that one first, the rest
+// as fallback. Third-party ones (`live`: URL template, {channel} = login) get
+// live playlists only and never the user's token; VODs stay on ReYohoho.
+const LUMINOUS_QUERY = 'allow_source=true&allow_audio_only=true&allow_spectre=false&fast_bread=true&type=any&player=twitchweb';
+const PROXY_PROVIDERS = [
+    { id: 'auto', label: 'Авто (ReYohoho)' },
+    ...PROXY_SERVERS.map((base) => {
+        const id = base.split('/')[2].split('.')[0];
+        return { id, label: 'ReYohoho ' + id, base };
+    }),
+    { id: 'luminous-eu', label: 'Luminous EU', live: 'https://eu.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
+    { id: 'luminous-eu2', label: 'Luminous EU2', live: 'https://eu2.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
+    { id: 'luminous-as', label: 'Luminous AS', live: 'https://as.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
+    // TTV LOL API: the query is percent-encoded into the path, a plain one gets HTTP 500.
+    { id: 'perfprod-as', label: 'PerfProd AS', live: 'https://lb-as.cdn-perfprod.com/playlist/{channel}.m3u8%3Fplatform%3Dweb%26allow_source%3Dtrue%26allow_audio_only%3Dtrue%26fast_bread%3Dtrue' }
+];
+const PROVIDER_CHECK_CHANNEL = 'lofigirl'; // live 24/7, so a probe always has a playlist to return
+const PROVIDER_CHECK_TIMEOUT = 8000;
+
+function getProxyProvider(id) {
+    return PROXY_PROVIDERS.find((p) => p.id === id) || PROXY_PROVIDERS[0];
+}
+
+// ReYohoho servers to try, the picked one first.
+function proxyServersFor(provider) {
+    return provider && provider.base ? [provider.base, ...PROXY_SERVERS.filter((s) => s !== provider.base)] : PROXY_SERVERS;
+}
+
+// Health check as playback does it: a master playlist through the provider.
+// A bare ping lies (PerfProd sits behind Cloudflare, which answers even when
+// the origin is dead). Resolves { ok, ms, country } or { ok: false, code }.
+async function checkProxyProvider(provider) {
+    const url = provider.live
+        ? provider.live.replace('{channel}', PROVIDER_CHECK_CHANNEL)
+        : provider.base + 'https://usher.ttvnw.net/api/channel/hls/' + PROVIDER_CHECK_CHANNEL + '.m3u8?allow_source=true&allow_audio_only=true&fast_bread=true';
+    const started = Date.now();
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), PROVIDER_CHECK_TIMEOUT);
+    try {
+        const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+        const text = res.ok ? await res.text() : '';
+        if (!text.startsWith('#EXTM3U')) return { ok: false, code: res.status };
+        // v2 master: "USER-COUNTRY",VALUE="NL"; v1: USER-COUNTRY="NL"
+        const m = text.match(/USER-COUNTRY(?:",VALUE=|=)"([A-Z]{2})"/);
+        return { ok: true, ms: Date.now() - started, country: m ? m[1] : null };
+    } catch (e) {
+        return { ok: false, code: 0 };
+    } finally {
+        clearTimeout(tid);
+    }
+}
+
 const TEST_MODE_PARAM = "&proxymode=adblock";
 
 // Sponsor block (shown at the top of the settings panel)
@@ -145,7 +198,7 @@ const RUSSIA_ONLY_FETCH_TIMEOUT = 4000;
 
 function extractTwitchChannelFromUsherUrl(url) {
     if (!url || typeof url !== 'string') return null;
-    const m = url.match(/usher\.ttvnw\.net\/api\/v[12]\/channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+    const m = url.match(/usher\.ttvnw\.net\/api\/(?:v[12]\/)?channel\/hls\/([^\/.?&#]+)\.m3u8/i);
     return m ? m[1].toLowerCase() : null;
 }
 
@@ -193,6 +246,11 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         VERSION,
         PROXY_SERVERS,
+        PROXY_PROVIDERS,
+        PROVIDER_CHECK_CHANNEL,
+        getProxyProvider,
+        proxyServersFor,
+        checkProxyProvider,
         TEST_MODE_PARAM,
         SPONSOR_NAME,
         SPONSOR_DESC,

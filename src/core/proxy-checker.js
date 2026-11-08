@@ -26,10 +26,10 @@ async function checkSingleProxy(proxyUrl, timeout = PROXY_CHECK_TIMEOUT) {
     }
 }
 
-async function findAvailableProxy() {
+async function findAvailableProxy(servers = PROXY_SERVERS) {
     console.log("[ReYohoho] Starting search for available proxy...");
-    
-    for (const proxyUrl of PROXY_SERVERS) {
+
+    for (const proxyUrl of servers) {
         const isAvailable = await checkSingleProxy(proxyUrl);
         if (isAvailable) {
             console.log(`[ReYohoho] Found available proxy: ${proxyUrl}`);

@@ -42,6 +42,11 @@
     // revealed once the backend explicitly returns ad_enabled=true. A timeout,
     // network error or `false` keeps it hidden.
     let tubernetAdEnabled = false;
+    // Playlist server picked in the panel (PROXY_PROVIDERS id) and the last
+    // health check per provider: { checking } or checkProxyProvider() + at.
+    let proxyProviderId = 'auto';
+    const providerChecks = {};
+    const PROVIDER_CHECK_TTL = 5 * 60 * 1000;
 
     // Check extension enabled synchronously from localStorage
     function isExtensionEnabledSync() {
@@ -161,7 +166,8 @@
     // Load settings
     async function loadSettings() {
         try {
-            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled', 'hideAudioOnlyEnabled']);
+            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled', 'hideAudioOnlyEnabled', 'proxyProvider']);
+            proxyProviderId = getProxyProvider(result.proxyProvider).id;
             
             if (typeof result.extensionEnabled === 'boolean') {
                 extensionEnabled = result.extensionEnabled;
@@ -278,6 +284,51 @@
         }
     }
 
+    // Save the playlist server and reload so the player refetches its master.
+    async function saveProxyProvider(id) {
+        const provider = getProxyProvider(id);
+        try {
+            await storageAdapter.set({ proxyProvider: provider.id });
+            if (isExtension && api) {
+                // Wait for the background to rebuild its rules so the reload uses them.
+                await api.runtime.sendMessage({ type: 'setProxyProvider', id: provider.id });
+            } else {
+                // The userscript header reads these before the shared constants exist.
+                localStorage.setItem('reyohoho_proxy_provider', JSON.stringify(provider));
+                if (provider.base) localStorage.setItem('reyohoho_proxy_url', provider.base);
+            }
+            console.log(`[ReYohoho] Playlist server: ${provider.id}`);
+            location.reload();
+        } catch (e) {
+            console.error('[ReYohoho] Error saving playlist server:', e);
+        }
+    }
+
+    function providerState() {
+        const url = proxyStatus.proxyUrl || (isUserscript ? localStorage.getItem('reyohoho_proxy_url') : null);
+        const current = PROXY_PROVIDERS.find((p) => p.base && p.base === url);
+        return { id: proxyProviderId, checks: providerChecks, currentId: current ? current.id : null };
+    }
+
+    // Probe providers, skipping fresh or running checks; repaints as each answers.
+    function checkProviders(list) {
+        list.filter((p) => p.id !== 'auto').forEach(async (p) => {
+            const c = providerChecks[p.id];
+            if (c && (c.checking || Date.now() - c.at < PROVIDER_CHECK_TTL)) return;
+            providerChecks[p.id] = { checking: true };
+            updateProviderInPanels(providerState());
+            providerChecks[p.id] = { ...(await checkProxyProvider(p)), at: Date.now() };
+            updateProviderInPanels(providerState());
+        });
+    }
+
+    // On menu open only the server in use is probed (shows its exit country).
+    function checkCurrentProvider() {
+        const s = providerState();
+        const id = s.id === 'auto' ? s.currentId : s.id;
+        if (id) checkProviders([getProxyProvider(id)]);
+    }
+
     // Save IRC proxy state. No reload needed: the wrapper picks up the
     // new flag on the next WebSocket construction, and we drop the
     // active socket(s) here so reconnect happens immediately.
@@ -340,7 +391,11 @@
         onExtensionToggle: saveExtensionEnabled,
         onVaftToggle: saveVaftEnabled,
         onIrcProxyToggle: saveIrcProxyEnabled,
-        onHideAudioOnlyToggle: saveHideAudioOnlyEnabled
+        onHideAudioOnlyToggle: saveHideAudioOnlyEnabled,
+        onProviderChange: saveProxyProvider,
+        onProviderCheck: () => checkProviders(PROXY_PROVIDERS),
+        onPanelShown: checkCurrentProvider,
+        getProviderState: providerState
     };
 
     // Get proxy status from background script (extensions)
@@ -410,6 +465,7 @@
         setInterval(async () => {
             await fetchProxyStatus();
             updateProxyStatusInPanels(proxyStatus, ircProxyState());
+            updateProviderInPanels(providerState());
         }, 5000);
 
         // Resolve the Tubernet sponsor gate once on load. Fail-closed: only an

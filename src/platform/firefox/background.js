@@ -15,6 +15,7 @@ let lastInterceptTime = 0;
 let interceptCount = 0;
 let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
+let proxyProvider = getProxyProvider('auto');
 
 let russiaOnlyChannelsSet = new Set();
 
@@ -64,14 +65,15 @@ function isRussiaOnlyUsherUrlFromSet(url) {
 // Load extension enabled state
 async function loadExtensionState() {
     try {
-        const result = await api.storage.local.get(['extensionEnabled', 'hideAudioOnlyEnabled']);
+        const result = await api.storage.local.get(['extensionEnabled', 'hideAudioOnlyEnabled', 'proxyProvider']);
         if (typeof result.extensionEnabled === 'boolean') {
             extensionEnabled = result.extensionEnabled;
         }
         if (typeof result.hideAudioOnlyEnabled === 'boolean') {
             hideAudioOnlyEnabled = result.hideAudioOnlyEnabled;
         }
-        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}, hideAudioOnly: ${hideAudioOnlyEnabled}`);
+        proxyProvider = getProxyProvider(result.proxyProvider);
+        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}, hideAudioOnly: ${hideAudioOnlyEnabled}, provider: ${proxyProvider.id}`);
     } catch (e) {
         console.error('[ReYohoho] Error loading extension state:', e);
     }
@@ -87,6 +89,13 @@ function createProxyListener(authToken = "") {
         if (isRussiaOnlyUsherUrlFromSet(originalUrl)) {
             console.log("[ReYohoho] Russia-only channel, bypassing proxy:", originalUrl);
             return {};
+        }
+
+        // Third-party provider: live playlists only, rebuilt from the channel
+        // (no token or query of the user leaves for them).
+        const liveChannel = proxyProvider.live && extractTwitchChannelFromUsherUrl(originalUrl);
+        if (liveChannel) {
+            return { redirectUrl: proxyProvider.live.replace('{channel}', liveChannel) };
         }
 
         const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
@@ -178,10 +187,10 @@ async function checkAndUpdateProxy() {
     proxyStatus = 'checking';
 
     try {
-        const availableProxy = await findAvailableProxy();
+        const availableProxy = await findAvailableProxy(proxyServersFor(proxyProvider));
         currentProxyUrl = availableProxy;
-        
-        if (availableProxy === null) {
+
+        if (availableProxy === null && !proxyProvider.live) {
             proxyStatus = 'unavailable';
             await updateProxyRules(false);
         } else {
@@ -204,13 +213,17 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
             status: extensionEnabled ? proxyStatus : 'disabled',
             lastInterceptTime: lastInterceptTime,
             interceptCount: interceptCount,
-            extensionEnabled: extensionEnabled
+            extensionEnabled: extensionEnabled,
+            provider: proxyProvider.id
         });
     } else if (message.type === 'extensionToggle') {
         extensionEnabled = message.enabled;
         lastCheckTime = 0;
         checkAndUpdateProxy();
         sendResponse({ success: true });
+    } else if (message.type === 'setProxyProvider') {
+        // Answer once the listener uses the new provider, so the page reload does too.
+        applyProxyProvider(message.id).then(() => sendResponse({ success: true }));
     }
     return true;
 });
@@ -229,6 +242,15 @@ api.storage.onChanged.addListener((changes, namespace) => {
         // hideAudioOnlyEnabled at request time.
     }
 });
+
+// Re-pick the server for a new provider (a ReYohoho choice goes first in the
+// check order). Waits out a running check, which would skip the new provider.
+async function applyProxyProvider(id) {
+    proxyProvider = getProxyProvider(id);
+    while (proxyCheckInProgress) await new Promise((r) => setTimeout(r, 100));
+    lastCheckTime = 0;
+    await checkAndUpdateProxy();
+}
 
 // Navigation listener
 if (api.webNavigation) {

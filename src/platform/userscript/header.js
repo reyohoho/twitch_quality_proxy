@@ -88,6 +88,18 @@
     // Get saved settings from localStorage
     const savedProxy = localStorage.getItem('reyohoho_proxy_url') || PROXY_SERVERS[0];
     const extensionEnabled = localStorage.getItem('reyohoho_enabled') !== 'false'; // Default true
+    // Provider picked in the panel, stored whole by the UI (this header runs
+    // before the shared constants are defined). `live` = third-party URL
+    // template for live playlists; `base` = preferred ReYohoho server.
+    const savedProvider = (() => {
+        try { return JSON.parse(localStorage.getItem('reyohoho_proxy_provider') || 'null') || {}; } catch (e) { return {}; }
+    })();
+    const LIVE_TEMPLATE = typeof savedProvider.live === 'string' ? savedProvider.live : '';
+
+    function liveChannelOf(url) {
+        const m = typeof url === 'string' && url.match(/^https:\/\/usher\.ttvnw\.net\/api\/(?:v2\/)?channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+        return m ? m[1].toLowerCase() : null;
+    }
     // Hide audio_only: sync key `reyohoho_hide_audio_only` is what the UI
     // writes before reload. The userscript storage adapter also keeps
     // `reyohoho_hideAudioOnlyEnabled` (JSON). Content script may migrate JSON
@@ -132,6 +144,8 @@
 
     // Build full proxy URL
     function buildProxyUrl(originalUrl, proxyUrl) {
+        const liveChannel = LIVE_TEMPLATE && liveChannelOf(originalUrl);
+        if (liveChannel) return LIVE_TEMPLATE.replace('{channel}', liveChannel);
         let result = proxyUrl + originalUrl;
         const authToken = getAuthToken();
         if (authToken) {
@@ -175,6 +189,7 @@
                     const AUTH_TOKEN = '${authTokenNow}';
                     const HIDE_AUDIO_ONLY = ${hideAudioOnlyForWorker ? 'true' : 'false'};
                     const RUSSIA_ONLY = new Set(${russiaOnlyJsonLiteral});
+                    const LIVE_TEMPLATE = ${JSON.stringify(LIVE_TEMPLATE)};
 
                     function isRussiaOnlyUsher(url) {
                         if (typeof url !== 'string') return false;
@@ -184,10 +199,15 @@
                     }
 
                     function replaceUrl(url) {
-                        if (typeof url === 'string' && url.includes('usher.ttvnw.net')) {
+                        if (typeof url === 'string' && url.startsWith('https://usher.ttvnw.net/')) {
                             if (isRussiaOnlyUsher(url)) {
                                 console.log('[ReYohoho Worker] Russia-only channel, bypassing proxy:', url.substring(0, 60) + '...');
                                 return url;
+                            }
+                            const live = LIVE_TEMPLATE && url.match(/^https:\\/\\/usher\\.ttvnw\\.net\\/api\\/(?:v2\\/)?channel\\/hls\\/([^\\/.?&#]+)\\.m3u8/i);
+                            if (live) {
+                                try { self.postMessage({ type: 'reyohoho-intercept', time: Date.now() }); } catch(e) {}
+                                return LIVE_TEMPLATE.replace('{channel}', live[1].toLowerCase());
                             }
                             let newUrl = PROXY_URL + url;
                             // Add auth token if available
@@ -211,7 +231,7 @@
                         if (typeof url === 'string') {
                             args[0] = replaceUrl(url);
                         } else if (url instanceof Request) {
-                            if (url.url.includes('usher.ttvnw.net')) {
+                            if (url.url.startsWith('https://usher.ttvnw.net/')) {
                                 const newUrl = replaceUrl(url.url);
                                 args[0] = new Request(newUrl, url);
                             }
@@ -282,7 +302,9 @@
             return originalFetch.apply(this, args);
         }
         let url = args[0];
-        if (typeof url === 'string' && url.includes('usher.ttvnw.net')) {
+        // startsWith, not includes: a URL already pointing at a proxy (or a
+        // provider health check) must not be proxied a second time.
+        if (typeof url === 'string' && url.startsWith('https://usher.ttvnw.net/')) {
             if (isRussiaOnlyUsherUrlLocal(url)) {
                 console.log('[ReYohoho] Russia-only channel, bypassing proxy (fetch):', url.substring(0, 60) + '...');
             } else {
@@ -290,7 +312,7 @@
                 console.log('[ReYohoho] Intercepting fetch:', url.substring(0, 60) + '...');
                 notifyIntercept();
             }
-        } else if (url instanceof Request && url.url.includes('usher.ttvnw.net')) {
+        } else if (url instanceof Request && url.url.startsWith('https://usher.ttvnw.net/')) {
             if (isRussiaOnlyUsherUrlLocal(url.url)) {
                 console.log('[ReYohoho] Russia-only channel, bypassing proxy (Request):', url.url.substring(0, 60) + '...');
             } else {
@@ -305,7 +327,7 @@
 
     const originalXHROpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-        if (extensionEnabled && typeof url === 'string' && url.includes('usher.ttvnw.net')) {
+        if (extensionEnabled && typeof url === 'string' && url.startsWith('https://usher.ttvnw.net/')) {
             if (isRussiaOnlyUsherUrlLocal(url)) {
                 console.log('[ReYohoho] Russia-only channel, bypassing proxy (XHR):', url.substring(0, 60) + '...');
             } else {
@@ -343,7 +365,8 @@
 
     // Check proxies in background and save best one
     (async function findBestProxy() {
-        for (const proxyUrl of PROXY_SERVERS) {
+        const order = savedProvider.base ? [savedProvider.base, ...PROXY_SERVERS.filter((s) => s !== savedProvider.base)] : PROXY_SERVERS;
+        for (const proxyUrl of order) {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);

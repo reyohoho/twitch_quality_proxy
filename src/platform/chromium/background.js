@@ -11,6 +11,7 @@ let proxyStatus = 'unknown';
 let rulesActive = false;
 let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
+let proxyProvider = getProxyProvider('auto');
 
 let russiaOnlyChannelsSet = new Set();
 let lastRussiaOnlyRefreshAt = 0;
@@ -19,14 +20,15 @@ let russiaOnlyRefreshInProgress = false;
 // Load extension enabled state
 async function loadExtensionState() {
     try {
-        const result = await chrome.storage.local.get(['extensionEnabled', 'hideAudioOnlyEnabled']);
+        const result = await chrome.storage.local.get(['extensionEnabled', 'hideAudioOnlyEnabled', 'proxyProvider']);
         if (typeof result.extensionEnabled === 'boolean') {
             extensionEnabled = result.extensionEnabled;
         }
         if (typeof result.hideAudioOnlyEnabled === 'boolean') {
             hideAudioOnlyEnabled = result.hideAudioOnlyEnabled;
         }
-        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}, hideAudioOnly: ${hideAudioOnlyEnabled}`);
+        proxyProvider = getProxyProvider(result.proxyProvider);
+        console.log(`[ReYohoho] Extension enabled: ${extensionEnabled}, hideAudioOnly: ${hideAudioOnlyEnabled}, provider: ${proxyProvider.id}`);
     } catch (e) {
         console.error('[ReYohoho] Error loading extension state:', e);
     }
@@ -72,7 +74,7 @@ async function refreshRussiaOnlyChannels() {
             console.warn('[ReYohoho] Error saving russia-only cache:', e);
         }
         console.log(`[ReYohoho] russia-only refreshed from backend: ${next.size} channels${changed ? ' (changed)' : ''}`);
-        if (changed && extensionEnabled && currentProxyUrl) {
+        if (changed && extensionEnabled && rulesActive) {
             // Пересобираем DNR-правила: alternation в allow-rule изменился.
             await updateProxyRules(true, currentProxyUrl);
         }
@@ -96,7 +98,7 @@ async function updateProxyRules(enable, proxyUrl) {
         const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
         const existingRuleIds = existingRules.map((rule) => rule.id);
 
-        if (enable && proxyUrl) {
+        if (enable && (proxyUrl || proxyProvider.live)) {
             let authParam = "";
 
             try {
@@ -118,8 +120,9 @@ async function updateProxyRules(enable, proxyUrl) {
             // strips audio_only entries from the master playlist.
             const hideAudioOnlyParam = hideAudioOnlyEnabled ? "&hide_audio_only=true" : "";
 
-            const rules = [
-                {
+            const rules = [];
+            if (proxyUrl) {
+                rules.push({
                     id: 1,
                     priority: 1,
                     action: {
@@ -133,8 +136,25 @@ async function updateProxyRules(enable, proxyUrl) {
                         regexFilter: "^https://usher\\.ttvnw\\.net/.*",
                         resourceTypes: ["xmlhttprequest", "media"]
                     }
-                }
-            ];
+                });
+            }
+            // Third-party provider: live playlists only, rebuilt from the
+            // channel (no token or query of the user leaves for them).
+            if (proxyProvider.live) {
+                rules.push({
+                    id: 2,
+                    priority: 2,
+                    action: {
+                        type: "redirect",
+                        redirect: { regexSubstitution: proxyProvider.live.replace('{channel}', '\\1') },
+                    },
+                    condition: {
+                        initiatorDomains: ["twitch.tv"],
+                        regexFilter: "^https://usher\\.ttvnw\\.net/api/(?:v2/)?channel/hls/([^/?]+)\\.m3u8.*$",
+                        resourceTypes: ["xmlhttprequest", "media"]
+                    }
+                });
+            }
 
             const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const russiaOnlyArr = Array.from(russiaOnlyChannelsSet);
@@ -146,7 +166,7 @@ async function updateProxyRules(enable, proxyUrl) {
                     action: { type: "allow" },
                     condition: {
                         initiatorDomains: ["twitch.tv"],
-                        regexFilter: `^https://usher\\.ttvnw\\.net/api/v[12]/channel/hls/${escapeRegex(channel)}\\.m3u8`,
+                        regexFilter: `^https://usher\\.ttvnw\\.net/api/(?:v[12]/)?channel/hls/${escapeRegex(channel)}\\.m3u8`,
                         resourceTypes: ["xmlhttprequest", "media"]
                     }
                 });
@@ -157,7 +177,7 @@ async function updateProxyRules(enable, proxyUrl) {
                 addRules: rules,
             });
             rulesActive = true;
-            console.log(`[ReYohoho] Proxy rules enabled with ${proxyUrl} (hideAudioOnly=${hideAudioOnlyEnabled}, russiaOnlyAllowed=${russiaOnlyArr.length})`);
+            console.log(`[ReYohoho] Proxy rules enabled with ${proxyUrl} (provider=${proxyProvider.id}, hideAudioOnly=${hideAudioOnlyEnabled}, russiaOnlyAllowed=${russiaOnlyArr.length})`);
         } else {
             await chrome.declarativeNetRequest.updateDynamicRules({
                 removeRuleIds: existingRuleIds,
@@ -195,9 +215,9 @@ async function checkAndUpdateProxy() {
     proxyStatus = 'checking';
 
     try {
-        const availableProxy = await findAvailableProxy();
+        const availableProxy = await findAvailableProxy(proxyServersFor(proxyProvider));
 
-        if (availableProxy) {
+        if (availableProxy || proxyProvider.live) {
             currentProxyUrl = availableProxy;
             await updateProxyRules(true, availableProxy);
             proxyStatus = 'active';
@@ -221,13 +241,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             proxyUrl: currentProxyUrl,
             status: extensionEnabled ? proxyStatus : 'disabled',
             rulesActive: rulesActive,
-            extensionEnabled: extensionEnabled
+            extensionEnabled: extensionEnabled,
+            provider: proxyProvider.id
         });
     } else if (message.type === 'extensionToggle') {
         extensionEnabled = message.enabled;
         lastCheckTime = 0;
         checkAndUpdateProxy();
         sendResponse({ success: true });
+    } else if (message.type === 'setProxyProvider') {
+        // Answer once the rules are rebuilt, so the page reload already uses them.
+        applyProxyProvider(message.id).then(() => sendResponse({ success: true }));
     }
     return true;
 });
@@ -249,6 +273,15 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         }
     }
 });
+
+// Re-pick the server for a new provider (a ReYohoho choice goes first in the
+// check order). Waits out a running check, which would skip the new provider.
+async function applyProxyProvider(id) {
+    proxyProvider = getProxyProvider(id);
+    while (proxyCheckInProgress) await new Promise((r) => setTimeout(r, 100));
+    lastCheckTime = 0;
+    await checkAndUpdateProxy();
+}
 
 // Navigation listener
 chrome.webNavigation.onBeforeNavigate.addListener(function(details) {

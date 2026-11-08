@@ -190,6 +190,59 @@ const PROXY_SERVERS = [
     "https://proxy6.rte.net.ru/"
 ];
 
+// Playlist servers the user can pick in the panel. 'auto' (default) = first
+// reachable PROXY_SERVERS entry; a ReYohoho server = that one first, the rest
+// as fallback. Third-party ones (`live`: URL template, {channel} = login) get
+// live playlists only and never the user's token; VODs stay on ReYohoho.
+const LUMINOUS_QUERY = 'allow_source=true&allow_audio_only=true&allow_spectre=false&fast_bread=true&type=any&player=twitchweb';
+const PROXY_PROVIDERS = [
+    { id: 'auto', label: 'Авто (ReYohoho)' },
+    ...PROXY_SERVERS.map((base) => {
+        const id = base.split('/')[2].split('.')[0];
+        return { id, label: 'ReYohoho ' + id, base };
+    }),
+    { id: 'luminous-eu', label: 'Luminous EU', live: 'https://eu.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
+    { id: 'luminous-eu2', label: 'Luminous EU2', live: 'https://eu2.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
+    { id: 'luminous-as', label: 'Luminous AS', live: 'https://as.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
+    // TTV LOL API: the query is percent-encoded into the path, a plain one gets HTTP 500.
+    { id: 'perfprod-as', label: 'PerfProd AS', live: 'https://lb-as.cdn-perfprod.com/playlist/{channel}.m3u8%3Fplatform%3Dweb%26allow_source%3Dtrue%26allow_audio_only%3Dtrue%26fast_bread%3Dtrue' }
+];
+const PROVIDER_CHECK_CHANNEL = 'lofigirl'; // live 24/7, so a probe always has a playlist to return
+const PROVIDER_CHECK_TIMEOUT = 8000;
+
+function getProxyProvider(id) {
+    return PROXY_PROVIDERS.find((p) => p.id === id) || PROXY_PROVIDERS[0];
+}
+
+// ReYohoho servers to try, the picked one first.
+function proxyServersFor(provider) {
+    return provider && provider.base ? [provider.base, ...PROXY_SERVERS.filter((s) => s !== provider.base)] : PROXY_SERVERS;
+}
+
+// Health check as playback does it: a master playlist through the provider.
+// A bare ping lies (PerfProd sits behind Cloudflare, which answers even when
+// the origin is dead). Resolves { ok, ms, country } or { ok: false, code }.
+async function checkProxyProvider(provider) {
+    const url = provider.live
+        ? provider.live.replace('{channel}', PROVIDER_CHECK_CHANNEL)
+        : provider.base + 'https://usher.ttvnw.net/api/channel/hls/' + PROVIDER_CHECK_CHANNEL + '.m3u8?allow_source=true&allow_audio_only=true&fast_bread=true';
+    const started = Date.now();
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), PROVIDER_CHECK_TIMEOUT);
+    try {
+        const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+        const text = res.ok ? await res.text() : '';
+        if (!text.startsWith('#EXTM3U')) return { ok: false, code: res.status };
+        // v2 master: "USER-COUNTRY",VALUE="NL"; v1: USER-COUNTRY="NL"
+        const m = text.match(/USER-COUNTRY(?:",VALUE=|=)"([A-Z]{2})"/);
+        return { ok: true, ms: Date.now() - started, country: m ? m[1] : null };
+    } catch (e) {
+        return { ok: false, code: 0 };
+    } finally {
+        clearTimeout(tid);
+    }
+}
+
 const TEST_MODE_PARAM = "&proxymode=adblock";
 
 // Sponsor block (shown at the top of the settings panel)
@@ -324,7 +377,7 @@ const RUSSIA_ONLY_FETCH_TIMEOUT = 4000;
 
 function extractTwitchChannelFromUsherUrl(url) {
     if (!url || typeof url !== 'string') return null;
-    const m = url.match(/usher\.ttvnw\.net\/api\/v[12]\/channel\/hls\/([^\/.?&#]+)\.m3u8/i);
+    const m = url.match(/usher\.ttvnw\.net\/api\/(?:v[12]\/)?channel\/hls\/([^\/.?&#]+)\.m3u8/i);
     return m ? m[1].toLowerCase() : null;
 }
 
@@ -412,6 +465,37 @@ function getIrcProxyDisplay(extensionEnabled, ircProxy) {
     return { enabled, available, badgeStatus, badgeText };
 }
 
+// One provider health check as text: absent / running / ok / failed.
+function providerCheckText(check) {
+    if (!check) return 'не проверен';
+    if (check.checking) return 'проверка…';
+    if (check.ok) return '✓ выход ' + (check.country || '??') + ' · ' + check.ms + ' мс';
+    return '✕ ' + (check.code ? 'HTTP ' + check.code : 'нет ответа');
+}
+
+// Option labels and the line under the picker. `state` = { id, checks, currentId }
+// from callbacks.getProviderState(); currentId is the ReYohoho server in use.
+function renderProviderSection(panel, state) {
+    const select = panel.querySelector('#reyohoho-provider-select');
+    const desc = panel.querySelector('.reyohoho-provider-desc');
+    if (!select || !desc || !state) return;
+    for (const option of select.options) {
+        const check = state.checks[option.value];
+        option.textContent = getProxyProvider(option.value).label + (check ? ' — ' + providerCheckText(check) : '');
+    }
+    select.value = state.id;
+    const selected = getProxyProvider(state.id);
+    const shown = selected.id === 'auto' ? PROXY_PROVIDERS.find((p) => p.id === state.currentId) : selected;
+    const kind = selected.live
+        ? 'Только трансляции, без вашего аккаунта (до 1080p), записи — через ReYohoho.'
+        : selected.id === 'auto' ? 'Первый доступный сервер ReYohoho.' : 'Этот сервер первым, остальные — запасные.';
+    desc.textContent = kind + (shown ? ' ' + shown.label + ': ' + providerCheckText(state.checks[shown.id]) : '');
+}
+
+function updateProviderInPanels(state) {
+    document.querySelectorAll('.reyohoho-proxy-settings').forEach((panel) => renderProviderSection(panel, state));
+}
+
 // Show/hide the sponsor block on a single panel. Kept in the DOM (toggled via
 // display) so an async backend response can reveal it after injection without
 // re-rendering the whole panel. Fail-closed: anything other than `true` hides.
@@ -457,6 +541,15 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         </label>
       </div>
       <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
+    </div>
+    <div class="reyohoho-section">
+      <div class="reyohoho-section-header">
+        <label class="reyohoho-section-title" for="reyohoho-provider-select">Сервер плейлистов</label>
+      </div>
+      <select class="reyohoho-provider-select" id="reyohoho-provider-select">
+        ${PROXY_PROVIDERS.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}
+      </select>
+      <span class="reyohoho-section-desc reyohoho-provider-desc"></span>
     </div>
     <div class="reyohoho-section">
       <div class="reyohoho-section-header">
@@ -508,6 +601,20 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         extToggle.addEventListener('change', (e) => {
             e.stopPropagation();
             if (onExtensionToggle) onExtensionToggle(e.target.checked);
+        });
+    }
+
+    // Provider picker: checks run when the user opens it (not on every menu
+    // open, so 90k viewers don't keep probing third-party servers).
+    const providerSelect = panel.querySelector('#reyohoho-provider-select');
+    if (providerSelect) {
+        renderProviderSection(panel, callbacks.getProviderState && callbacks.getProviderState());
+        providerSelect.addEventListener('focus', () => {
+            if (callbacks.onProviderCheck) callbacks.onProviderCheck();
+        });
+        providerSelect.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (callbacks.onProviderChange) callbacks.onProviderChange(e.target.value);
         });
     }
 
@@ -630,6 +737,7 @@ function injectIntoElement(container, extensionEnabled, vaftEnabled, proxyStatus
 
     const panel = createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbacks, ircProxy, hideAudioOnly, tubernetAdEnabled);
     container.insertBefore(panel, container.firstChild);
+    if (callbacks && callbacks.onPanelShown) callbacks.onPanelShown();
     return true;
 }
 
@@ -724,6 +832,11 @@ function startObserver(getState) {
     // revealed once the backend explicitly returns ad_enabled=true. A timeout,
     // network error or `false` keeps it hidden.
     let tubernetAdEnabled = false;
+    // Playlist server picked in the panel (PROXY_PROVIDERS id) and the last
+    // health check per provider: { checking } or checkProxyProvider() + at.
+    let proxyProviderId = 'auto';
+    const providerChecks = {};
+    const PROVIDER_CHECK_TTL = 5 * 60 * 1000;
 
     // Check extension enabled synchronously from localStorage
     function isExtensionEnabledSync() {
@@ -4176,7 +4289,8 @@ function startObserver(getState) {
     // Load settings
     async function loadSettings() {
         try {
-            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled', 'hideAudioOnlyEnabled']);
+            const result = await storageAdapter.get(['extensionEnabled', 'vaftEnabled', 'ircProxyEnabled', 'hideAudioOnlyEnabled', 'proxyProvider']);
+            proxyProviderId = getProxyProvider(result.proxyProvider).id;
             
             if (typeof result.extensionEnabled === 'boolean') {
                 extensionEnabled = result.extensionEnabled;
@@ -4293,6 +4407,51 @@ function startObserver(getState) {
         }
     }
 
+    // Save the playlist server and reload so the player refetches its master.
+    async function saveProxyProvider(id) {
+        const provider = getProxyProvider(id);
+        try {
+            await storageAdapter.set({ proxyProvider: provider.id });
+            if (isExtension && api) {
+                // Wait for the background to rebuild its rules so the reload uses them.
+                await api.runtime.sendMessage({ type: 'setProxyProvider', id: provider.id });
+            } else {
+                // The userscript header reads these before the shared constants exist.
+                localStorage.setItem('reyohoho_proxy_provider', JSON.stringify(provider));
+                if (provider.base) localStorage.setItem('reyohoho_proxy_url', provider.base);
+            }
+            console.log(`[ReYohoho] Playlist server: ${provider.id}`);
+            location.reload();
+        } catch (e) {
+            console.error('[ReYohoho] Error saving playlist server:', e);
+        }
+    }
+
+    function providerState() {
+        const url = proxyStatus.proxyUrl || (isUserscript ? localStorage.getItem('reyohoho_proxy_url') : null);
+        const current = PROXY_PROVIDERS.find((p) => p.base && p.base === url);
+        return { id: proxyProviderId, checks: providerChecks, currentId: current ? current.id : null };
+    }
+
+    // Probe providers, skipping fresh or running checks; repaints as each answers.
+    function checkProviders(list) {
+        list.filter((p) => p.id !== 'auto').forEach(async (p) => {
+            const c = providerChecks[p.id];
+            if (c && (c.checking || Date.now() - c.at < PROVIDER_CHECK_TTL)) return;
+            providerChecks[p.id] = { checking: true };
+            updateProviderInPanels(providerState());
+            providerChecks[p.id] = { ...(await checkProxyProvider(p)), at: Date.now() };
+            updateProviderInPanels(providerState());
+        });
+    }
+
+    // On menu open only the server in use is probed (shows its exit country).
+    function checkCurrentProvider() {
+        const s = providerState();
+        const id = s.id === 'auto' ? s.currentId : s.id;
+        if (id) checkProviders([getProxyProvider(id)]);
+    }
+
     // Save IRC proxy state. No reload needed: the wrapper picks up the
     // new flag on the next WebSocket construction, and we drop the
     // active socket(s) here so reconnect happens immediately.
@@ -4355,7 +4514,11 @@ function startObserver(getState) {
         onExtensionToggle: saveExtensionEnabled,
         onVaftToggle: saveVaftEnabled,
         onIrcProxyToggle: saveIrcProxyEnabled,
-        onHideAudioOnlyToggle: saveHideAudioOnlyEnabled
+        onHideAudioOnlyToggle: saveHideAudioOnlyEnabled,
+        onProviderChange: saveProxyProvider,
+        onProviderCheck: () => checkProviders(PROXY_PROVIDERS),
+        onPanelShown: checkCurrentProvider,
+        getProviderState: providerState
     };
 
     // Get proxy status from background script (extensions)
@@ -4425,6 +4588,7 @@ function startObserver(getState) {
         setInterval(async () => {
             await fetchProxyStatus();
             updateProxyStatusInPanels(proxyStatus, ircProxyState());
+            updateProviderInPanels(providerState());
         }, 5000);
 
         // Resolve the Tubernet sponsor gate once on load. Fail-closed: only an

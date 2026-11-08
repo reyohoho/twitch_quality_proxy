@@ -294,6 +294,27 @@
     line-height: 1.2;
 }
 
+.reyohoho-provider-select {
+    width: 100%;
+    margin: 3px 0;
+    padding: 3px 4px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #efeff1;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+.reyohoho-provider-select:focus-visible {
+    outline: 1px solid #bf94ff;
+}
+
+.reyohoho-provider-select option {
+    background: #18181b;
+    color: #efeff1;
+}
+
 /* Toggle Switch */
 .reyohoho-toggle {
     position: relative;
