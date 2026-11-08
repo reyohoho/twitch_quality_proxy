@@ -2693,15 +2693,17 @@ function createMediaSequencer() {
             if (adBlockDiv == null) {
                 adBlockDiv = document.createElement('div');
                 adBlockDiv.className = 'tas-adblock-overlay';
-                adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;"><p></p></div>';
+                adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 12px; background: rgba(24, 24, 27, 0.88); border: 1px solid rgba(145, 71, 255, 0.55); color: #efeff1; font: 600 12px/1.3 Inter, Roobert, Arial, sans-serif; pointer-events: none;">'
+                    + '<span style="display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: #9147ff; flex-shrink: 0;"><svg viewBox="0 0 20 20" width="10" height="10" aria-hidden="true"><path d="M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z" fill="#fff"/></svg></span>'
+                    + '<p style="margin: 0;"></p></div>';
                 adBlockDiv.style.display = 'none';
                 adBlockDiv.P = adBlockDiv.querySelector('p');
                 playerRootDiv.appendChild(adBlockDiv);
             }
             if (adBlockDiv != null) {
                 isActivelyStrippingAds = data.isStrippingAdSegments;
-                adBlockDiv.P.textContent = 'ReYohoho: Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
-                adBlockDiv.style.display = data.hasAds && playerBufferState.isLive ? 'block' : 'none';
+                adBlockDiv.P.textContent = 'ReYohoho · блокируем ' + (data.isMidroll ? 'мидролл' : 'рекламу') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
+                adBlockDiv.style.display = data.hasAds && playerBufferState.isLive && playerRootDiv.clientWidth >= 480 ? 'block' : 'none';
             }
             if (data.hasAds) {
                 hideTwitchAdOverlays();

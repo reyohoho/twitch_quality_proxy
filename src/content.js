@@ -304,20 +304,45 @@
         }
     }
 
+    // Channel being watched (twitch.tv/<login>), or null on other pages.
+    const NON_CHANNEL_PATHS = new Set(['directory', 'videos', 'settings', 'search', 'inventory', 'drops', 'subscriptions',
+        'wallet', 'friends', 'downloads', 'turbo', 'p', 'jobs', 'store', 'prime', 'messages', 'following', 'u', 'login', 'signup']);
+    function currentChannel() {
+        const m = location.pathname.match(/^\/(?:popout\/|moderator\/)?([a-z0-9_]{2,25})(?:\/|$)/i);
+        return m && !NON_CHANNEL_PATHS.has(m[1].toLowerCase()) ? m[1].toLowerCase() : null;
+    }
+
+    function twitchAuthToken() {
+        const m = document.cookie.match(/(?:^|;\s*)auth-token=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
     function providerState() {
         const url = proxyStatus.proxyUrl || (isUserscript ? localStorage.getItem('reyohoho_proxy_url') : null);
         const current = PROXY_PROVIDERS.find((p) => p.base && p.base === url);
-        return { id: proxyProviderId, checks: providerChecks, currentId: current ? current.id : null };
+        return {
+            id: proxyProviderId,
+            checks: providerChecks,
+            currentId: current ? current.id : null,
+            channel: currentChannel() || PROVIDER_CHECK_CHANNEL
+        };
     }
 
-    // Probe providers, skipping fresh or running checks; repaints as each answers.
+    // Probe providers on the stream being watched (its max quality per server),
+    // skipping fresh or running checks; repaints as each answers.
     function checkProviders(list) {
+        const channel = currentChannel() || PROVIDER_CHECK_CHANNEL;
         list.filter((p) => p.id !== 'auto').forEach(async (p) => {
             const c = providerChecks[p.id];
-            if (c && (c.checking || Date.now() - c.at < PROVIDER_CHECK_TTL)) return;
+            if (c && (c.checking || (c.channel === channel && Date.now() - c.at < PROVIDER_CHECK_TTL))) return;
             providerChecks[p.id] = { checking: true };
             updateProviderInPanels(providerState());
-            providerChecks[p.id] = { ...(await checkProxyProvider(p)), at: Date.now() };
+            let result = await checkProxyProvider(p, channel, twitchAuthToken());
+            // Channel offline or refused through this server: the server itself may still be fine.
+            if (!result.ok && result.code >= 400 && result.code < 500 && channel !== PROVIDER_CHECK_CHANNEL) {
+                result = { ...(await checkProxyProvider(p)), quality: null };
+            }
+            providerChecks[p.id] = { ...result, channel, at: Date.now() };
             updateProviderInPanels(providerState());
         });
     }

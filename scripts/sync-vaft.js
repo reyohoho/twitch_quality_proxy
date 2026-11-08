@@ -17,7 +17,7 @@
  *   2. Stall-recovery watchdog: forces a reload when the playhead freezes with
  *      a drained buffer (black screen + Play button after a contaminated ad
  *      break), with verbose [ReYohoho WD] diagnostics.
- *   3-5. Buffer-monitor readyState guard, PAUSE_ADS block, status prefix.
+ *   3-5. Buffer-monitor readyState guard, PAUSE_ADS block, ad banner look.
  *   6. CLASS="twitch-trigger" counts as an ad only next to a non-live segment.
  *   7. MediaSequencer (src/core/media-sequencer.js) on the served media playlists.
  */
@@ -351,12 +351,29 @@ function applyReyohohoPatches(code) {
         'block PAUSE_ADS request'
     );
 
-    // Patch 5: brand the on-screen ad-block status text with the ReYohoho prefix.
+    // Patch 5: the on-screen ad-block banner in the ReYohoho panel style (a pill
+    // with the logo mark, Russian text). Styles stay inline: the banner lives in
+    // the page and must look the same in every build. Clicks pass through it.
     code = replaceOnce(
         code,
-        "adBlockDiv.P.textContent = 'Blocking'",
-        "adBlockDiv.P.textContent = 'ReYohoho: Blocking'",
-        'ReYohoho status prefix'
+        "adBlockDiv.innerHTML = '<div class=\"player-adblock-notice\" style=\"color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;\"><p></p></div>';",
+        "adBlockDiv.innerHTML = '<div class=\"player-adblock-notice\" style=\"position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 12px; background: rgba(24, 24, 27, 0.88); border: 1px solid rgba(145, 71, 255, 0.55); color: #efeff1; font: 600 12px/1.3 Inter, Roobert, Arial, sans-serif; pointer-events: none;\">'\n"
+        + "                    + '<span style=\"display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: #9147ff; flex-shrink: 0;\"><svg viewBox=\"0 0 20 20\" width=\"10\" height=\"10\" aria-hidden=\"true\"><path d=\"M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z\" fill=\"#fff\"/></svg></span>'\n"
+        + "                    + '<p style=\"margin: 0;\"></p></div>';",
+        'ReYohoho ad banner look'
+    );
+    code = replaceOnce(
+        code,
+        "adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');",
+        "adBlockDiv.P.textContent = 'ReYohoho · блокируем ' + (data.isMidroll ? 'мидролл' : 'рекламу') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));",
+        'ReYohoho ad banner text'
+    );
+    // No banner on a small player (Twitch's corner mini player): it covered the picture.
+    code = replaceOnce(
+        code,
+        "adBlockDiv.style.display = data.hasAds && playerBufferState.isLive ? 'block' : 'none';",
+        "adBlockDiv.style.display = data.hasAds && playerBufferState.isLive && playerRootDiv.clientWidth >= 480 ? 'block' : 'none';",
+        'no ad banner on a small player'
     );
 
     // Patch 6: CLASS="twitch-trigger" also rides clean live playlists after a

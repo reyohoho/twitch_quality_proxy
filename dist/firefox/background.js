@@ -22,10 +22,10 @@ const PROXY_SERVERS = [
 // live playlists only and never the user's token; VODs stay on ReYohoho.
 const LUMINOUS_QUERY = 'allow_source=true&allow_audio_only=true&allow_spectre=false&fast_bread=true&type=any&player=twitchweb';
 const PROXY_PROVIDERS = [
-    { id: 'auto', label: 'Авто (ReYohoho)' },
+    { id: 'auto', label: 'Авто' },
     ...PROXY_SERVERS.map((base) => {
         const id = base.split('/')[2].split('.')[0];
-        return { id, label: 'ReYohoho ' + id, base };
+        return { id, label: id, base };
     }),
     { id: 'luminous-eu', label: 'Luminous EU', live: 'https://eu.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
     { id: 'luminous-eu2', label: 'Luminous EU2', live: 'https://eu2.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
@@ -45,23 +45,39 @@ function proxyServersFor(provider) {
     return provider && provider.base ? [provider.base, ...PROXY_SERVERS.filter((s) => s !== provider.base)] : PROXY_SERVERS;
 }
 
-// Health check as playback does it: a master playlist through the provider.
-// A bare ping lies (PerfProd sits behind Cloudflare, which answers even when
-// the origin is dead). Resolves { ok, ms, country } or { ok: false, code }.
-async function checkProxyProvider(provider) {
+// Best variant of a master playlist as Twitch names it ("1440p60", "1080p"), or null.
+function maxQualityOf(master) {
+    let best = null;
+    for (const m of master.matchAll(/#EXT-X-STREAM-INF:([^\n]*)/g)) {
+        const res = m[1].match(/RESOLUTION=\d+x(\d+)/);
+        if (!res) continue; // audio only
+        const h = parseInt(res[1], 10);
+        const fps = parseFloat((m[1].match(/FRAME-RATE=([\d.]+)/) || [])[1]) || 0;
+        if (!best || h > best.h || (h === best.h && fps > best.fps)) best = { h, fps };
+    }
+    return best ? best.h + 'p' + (best.fps >= 50 ? Math.round(best.fps) : '') : null;
+}
+
+// Health check as playback does it: the channel's master playlist through the
+// provider. A bare ping lies (PerfProd sits behind Cloudflare, which answers
+// even when the origin is dead). The user's token goes to ReYohoho servers
+// only (in a header, out of URLs and logs), as playback sends it there.
+// Resolves { ok, ms, country, quality } or { ok: false, code }.
+async function checkProxyProvider(provider, channel = PROVIDER_CHECK_CHANNEL, authToken = '') {
     const url = provider.live
-        ? provider.live.replace('{channel}', PROVIDER_CHECK_CHANNEL)
-        : provider.base + 'https://usher.ttvnw.net/api/channel/hls/' + PROVIDER_CHECK_CHANNEL + '.m3u8?allow_source=true&allow_audio_only=true&fast_bread=true';
+        ? provider.live.replace('{channel}', channel)
+        : provider.base + 'https://usher.ttvnw.net/api/channel/hls/' + channel + '.m3u8?allow_source=true&allow_audio_only=true&fast_bread=true';
+    const headers = authToken && provider.base ? { 'X-Auth-Token': authToken } : {};
     const started = Date.now();
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), PROVIDER_CHECK_TIMEOUT);
     try {
-        const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+        const res = await fetch(url, { cache: 'no-store', headers, signal: ctrl.signal });
         const text = res.ok ? await res.text() : '';
         if (!text.startsWith('#EXTM3U')) return { ok: false, code: res.status };
         // v2 master: "USER-COUNTRY",VALUE="NL"; v1: USER-COUNTRY="NL"
         const m = text.match(/USER-COUNTRY(?:",VALUE=|=)"([A-Z]{2})"/);
-        return { ok: true, ms: Date.now() - started, country: m ? m[1] : null };
+        return { ok: true, ms: Date.now() - started, country: m ? m[1] : null, quality: maxQualityOf(text) };
     } catch (e) {
         return { ok: false, code: 0 };
     } finally {
@@ -255,6 +271,7 @@ if (typeof module !== 'undefined' && module.exports) {
         PROVIDER_CHECK_CHANNEL,
         getProxyProvider,
         proxyServersFor,
+        maxQualityOf,
         checkProxyProvider,
         TEST_MODE_PARAM,
         SPONSOR_NAME,

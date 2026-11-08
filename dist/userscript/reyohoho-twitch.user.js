@@ -558,126 +558,171 @@
     const style = document.createElement('style');
     style.textContent = `/* ============================================
    ReYohoho Twitch Proxy - Styles
+   Twitch-native dark surface, one accent (Twitch purple), status colors
+   only for status. Tokens are scoped to the panel so nothing leaks into
+   Twitch's own UI.
    ============================================ */
 
 .reyohoho-proxy-settings {
-    padding: 8px;
-    margin: 6px;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.3) 100%);
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    --rh-surface: #1f1f23;
+    --rh-sunken: rgba(0, 0, 0, 0.22);
+    --rh-hover: rgba(255, 255, 255, 0.06);
+    --rh-border: rgba(255, 255, 255, 0.08);
+    --rh-border-strong: rgba(255, 255, 255, 0.2);
+    --rh-text: #efeff1;
+    --rh-text-2: #adadb8;
+    --rh-text-3: #7d7d87;
+    --rh-accent: #9147ff;
+    --rh-accent-hover: #a970ff;
+    --rh-accent-text: #bf94ff;
+    --rh-accent-soft: rgba(145, 71, 255, 0.16);
+    --rh-ok: #3ddc97;
+    --rh-warn: #ffb31a;
+    --rh-bad: #ff6b6b;
+
+    margin: 8px 8px 4px;
+    background: var(--rh-surface);
+    border: 1px solid var(--rh-border);
+    border-radius: 10px;
+    color: var(--rh-text);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: left;
+    overflow: hidden;
 }
+
+.reyohoho-proxy-settings *,
+.reyohoho-proxy-settings *::before,
+.reyohoho-proxy-settings *::after {
+    box-sizing: border-box;
+}
+
+/* ---------- Header ---------- */
 
 .reyohoho-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--rh-border);
 }
 
-.reyohoho-icon {
-    font-size: 14px;
-    filter: grayscale(100%);
+.reyohoho-logo {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
 }
 
 .reyohoho-title {
+    font-size: 13px;
     font-weight: 600;
-    font-size: 11px;
-    color: #ffffff;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
-    flex: 1;
+    letter-spacing: 0.01em;
 }
 
 .reyohoho-version {
-    font-weight: 400;
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.5);
-    text-transform: lowercase;
-    margin-left: 4px;
+    font-size: 11px;
+    color: var(--rh-text-3);
+    font-variant-numeric: tabular-nums;
 }
 
+/* Status pill: text from JS, dot from currentColor */
 .reyohoho-proxy-status {
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px 2px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--rh-text-3);
+    background: var(--rh-hover);
+}
+
+.reyohoho-proxy-status::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+
+.reyohoho-header .reyohoho-proxy-status {
+    margin-left: auto;
 }
 
 .reyohoho-proxy-status[data-status="active"] {
-    color: #00ff88;
-    background: rgba(0, 255, 136, 0.15);
+    color: var(--rh-ok);
+    background: rgba(61, 220, 151, 0.12);
 }
 
 .reyohoho-proxy-status[data-status="ready"] {
-    color: #88ccff;
-    background: rgba(136, 204, 255, 0.15);
+    color: var(--rh-accent-text);
+    background: var(--rh-accent-soft);
 }
 
 .reyohoho-proxy-status[data-status="checking"] {
-    color: #ffcc00;
-    background: rgba(255, 204, 0, 0.15);
+    color: var(--rh-warn);
+    background: rgba(255, 179, 26, 0.12);
 }
 
 .reyohoho-proxy-status[data-status="unavailable"],
 .reyohoho-proxy-status[data-status="error"] {
-    color: #ff6666;
-    background: rgba(255, 102, 102, 0.15);
+    color: var(--rh-bad);
+    background: rgba(255, 107, 107, 0.12);
 }
 
-.reyohoho-proxy-status[data-status="disabled"],
-.reyohoho-proxy-status[data-status="unknown"] {
-    color: #aaaaaa;
-    background: rgba(170, 170, 170, 0.15);
+.reyohoho-irc-status {
+    margin-left: 8px;
+    padding: 1px 7px 1px 6px;
+    font-size: 10px;
 }
 
-/* ============================================
-   Sponsor Block
-   ============================================ */
+/* ---------- Sponsor ---------- */
 
 .reyohoho-sponsor {
-    position: relative;
     display: block;
-    margin: 10px 0 8px 0;
-    padding: 10px 8px 8px;
-    background: linear-gradient(135deg, rgba(145, 71, 255, 0.12) 0%, rgba(0, 0, 0, 0.25) 100%);
-    border: 1px solid rgba(145, 71, 255, 0.45);
-    border-radius: 6px;
+    margin: 10px 12px 2px;
+    padding: 9px 10px 10px;
+    background: linear-gradient(135deg, rgba(145, 71, 255, 0.2) 0%, rgba(145, 71, 255, 0.06) 100%);
+    border: 1px solid rgba(145, 71, 255, 0.35);
+    border-radius: 8px;
+    color: inherit;
     text-decoration: none;
-    transition: all 0.15s ease;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .reyohoho-sponsor:hover {
-    border-color: rgba(145, 71, 255, 0.8);
-    background: linear-gradient(135deg, rgba(145, 71, 255, 0.2) 0%, rgba(0, 0, 0, 0.25) 100%);
+    border-color: rgba(145, 71, 255, 0.7);
+}
+
+.reyohoho-sponsor:focus-visible {
+    outline: 2px solid var(--rh-accent);
+    outline-offset: 2px;
 }
 
 .reyohoho-sponsor-label {
-    position: absolute;
-    top: -7px;
-    left: 8px;
-    padding: 1px 6px;
-    background: #9147ff;
-    color: #ffffff;
-    font-size: 8px;
+    display: block;
+    margin-bottom: 6px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    border-radius: 3px;
+    color: var(--rh-accent-text);
 }
 
 .reyohoho-sponsor-body {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
 .reyohoho-sponsor-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 5px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     flex-shrink: 0;
 }
 
@@ -690,279 +735,367 @@
 }
 
 .reyohoho-sponsor-name {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
-    color: #ffffff;
+    color: var(--rh-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .reyohoho-sponsor-desc {
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
+    color: var(--rh-text-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .reyohoho-sponsor-arrow {
-    font-size: 13px;
-    color: #bf94ff;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
+    color: var(--rh-accent-text);
 }
 
-.reyohoho-options {
+/* ---------- Settings rows ---------- */
+
+.reyohoho-group {
+    padding: 2px 0;
+}
+
+.reyohoho-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+}
+
+.reyohoho-row + .reyohoho-row {
+    border-top: 1px solid var(--rh-border);
+}
+
+.reyohoho-row-text {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
 }
 
-.reyohoho-option {
+.reyohoho-row-title {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--rh-text);
+}
+
+.reyohoho-row-desc {
+    font-size: 12px;
+    color: var(--rh-text-2);
+}
+
+/* ---------- Server picker ---------- */
+
+.reyohoho-server {
+    display: block;
+    padding: 0;
+}
+
+.reyohoho-server-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.reyohoho-server-toggle:hover {
+    background: var(--rh-hover);
+}
+
+.reyohoho-server-toggle:focus-visible {
+    outline: 2px solid var(--rh-accent);
+    outline-offset: -2px;
+}
+
+.reyohoho-server-summary {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.reyohoho-option:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-.reyohoho-option.active {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-.reyohoho-option input[type="radio"] {
-    display: none;
-}
-
-.reyohoho-radio {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    border-radius: 50%;
-    position: relative;
-    flex-shrink: 0;
-    transition: all 0.15s ease;
-}
-
-.reyohoho-option:hover .reyohoho-radio {
-    border-color: rgba(255, 255, 255, 0.6);
-}
-
-.reyohoho-option.active .reyohoho-radio {
-    border-color: #ffffff;
-}
-
-.reyohoho-option.active .reyohoho-radio::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 6px;
-    height: 6px;
-    background: #ffffff;
-    border-radius: 50%;
-}
-
-.reyohoho-option-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-
-.reyohoho-option-title {
+    min-width: 0;
     font-size: 12px;
-    font-weight: 500;
-    color: #efeff1;
 }
 
-.reyohoho-option-desc {
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.45);
-}
-
-.reyohoho-option.active .reyohoho-option-title {
-    color: #ffffff;
-}
-
-.reyohoho-option.active .reyohoho-option-desc {
-    color: rgba(255, 255, 255, 0.7);
-}
-
-/* ============================================
-   VAFT Section Styles
-   ============================================ */
-
-.reyohoho-divider {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 8px 0;
-}
-
-.reyohoho-section {
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    margin-bottom: 6px;
-}
-
-.reyohoho-section:last-of-type {
-    margin-bottom: 0;
-}
-
-.reyohoho-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 2px;
-}
-
-.reyohoho-section-header .reyohoho-section-title {
-    flex: 1;
-}
-
-.reyohoho-section-header .reyohoho-irc-status {
-    font-size: 9px;
-    padding: 1px 5px;
+.reyohoho-server-name {
+    color: var(--rh-text-2);
     white-space: nowrap;
 }
 
-.reyohoho-section-title {
+.reyohoho-chevron {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--rh-text-3);
+    transition: transform 0.15s ease;
+}
+
+.reyohoho-server-toggle[aria-expanded="true"] .reyohoho-chevron {
+    transform: rotate(180deg);
+}
+
+/* Check result: "NL · 1440p60 · 240 мс" with a status dot */
+.reyohoho-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--rh-text-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reyohoho-meta:empty {
+    display: none;
+}
+
+.reyohoho-meta:not([data-status="idle"])::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--rh-text-3);
+}
+
+.reyohoho-meta[data-status="ok"]::before {
+    background: var(--rh-ok);
+}
+
+.reyohoho-meta[data-status="bad"] {
+    color: var(--rh-bad);
+}
+
+.reyohoho-meta[data-status="bad"]::before {
+    background: var(--rh-bad);
+}
+
+.reyohoho-meta[data-status="checking"]::before {
+    background: var(--rh-warn);
+    animation: reyohoho-pulse 1s ease-in-out infinite;
+}
+
+@keyframes reyohoho-pulse {
+    50% {
+        opacity: 0.3;
+    }
+}
+
+.reyohoho-server-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px 6px 8px;
+    background: var(--rh-sunken);
+    border-top: 1px solid var(--rh-border);
+}
+
+.reyohoho-server-list[hidden] {
+    display: none;
+}
+
+.reyohoho-server-group {
+    padding: 8px 8px 4px;
     font-size: 11px;
-    font-weight: 500;
-    color: #efeff1;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--rh-text-3);
 }
 
-.reyohoho-section-desc {
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.4);
-    display: block;
-    line-height: 1.2;
-}
-
-.reyohoho-provider-select {
+.reyohoho-server-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     width: 100%;
-    margin: 3px 0;
-    padding: 3px 4px;
-    background: rgba(0, 0, 0, 0.35);
-    color: #efeff1;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-    font-size: 10px;
+    margin: 0;
+    padding: 7px 8px;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
+    transition: background-color 0.15s ease;
 }
 
-.reyohoho-provider-select:focus-visible {
-    outline: 1px solid #bf94ff;
+.reyohoho-server-option:hover {
+    background: var(--rh-hover);
 }
 
-.reyohoho-provider-select option {
-    background: #18181b;
-    color: #efeff1;
+.reyohoho-server-option:focus-visible {
+    outline: 2px solid var(--rh-accent);
+    outline-offset: -2px;
 }
 
-/* Toggle Switch */
+.reyohoho-server-option[aria-checked="true"] {
+    background: var(--rh-accent-soft);
+}
+
+.reyohoho-radio {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    border: 2px solid var(--rh-border-strong);
+    border-radius: 50%;
+    transition: border-color 0.15s ease;
+}
+
+.reyohoho-server-option[aria-checked="true"] .reyohoho-radio {
+    border-color: var(--rh-accent);
+}
+
+.reyohoho-server-option[aria-checked="true"] .reyohoho-radio::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--rh-accent);
+}
+
+.reyohoho-server-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.reyohoho-server-option-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--rh-text);
+}
+
+.reyohoho-server-note {
+    margin: 6px 8px 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--rh-text-3);
+}
+
+/* ---------- Toggle switch ---------- */
+
 .reyohoho-toggle {
     position: relative;
     display: inline-block;
-    width: 32px;
-    height: 18px;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
     cursor: pointer;
 }
 
 .reyohoho-toggle input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
     opacity: 0;
-    width: 0;
-    height: 0;
+    cursor: pointer;
 }
 
 .reyohoho-toggle-slider {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(255, 255, 255, 0.2);
-    border-radius: 18px;
-    transition: all 0.3s ease;
+    inset: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    pointer-events: none;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .reyohoho-toggle-slider::before {
+    content: '';
     position: absolute;
-    content: "";
-    height: 12px;
-    width: 12px;
+    top: 3px;
     left: 3px;
-    bottom: 3px;
-    background-color: white;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    transition: all 0.3s ease;
-}
-
-.reyohoho-toggle input:checked + .reyohoho-toggle-slider {
-    background-color: #9147ff;
-}
-
-.reyohoho-toggle input:checked + .reyohoho-toggle-slider::before {
-    transform: translateX(14px);
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s ease;
 }
 
 .reyohoho-toggle:hover .reyohoho-toggle-slider {
-    background-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.26);
 }
 
-.reyohoho-toggle input:checked:hover + .reyohoho-toggle-slider {
-    background-color: #a970ff;
+.reyohoho-toggle input:checked + .reyohoho-toggle-slider {
+    background: var(--rh-accent);
 }
 
-/* VAFT Test Button */
+.reyohoho-toggle:hover input:checked + .reyohoho-toggle-slider {
+    background: var(--rh-accent-hover);
+}
+
+.reyohoho-toggle input:checked + .reyohoho-toggle-slider::before {
+    transform: translateX(16px);
+}
+
+.reyohoho-toggle input:focus-visible + .reyohoho-toggle-slider {
+    box-shadow: 0 0 0 2px var(--rh-surface), 0 0 0 4px var(--rh-accent);
+}
+
+/* ---------- VAFT test button (dev builds) ---------- */
+
 .reyohoho-vaft-test-btn {
     width: 100%;
-    margin-top: 6px;
-    padding: 5px 8px;
-    background: rgba(145, 71, 255, 0.15);
-    border: 1px solid rgba(145, 71, 255, 0.3);
-    border-radius: 4px;
-    color: #bf94ff;
-    font-size: 10px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    background: var(--rh-accent-soft);
+    border: 1px solid rgba(145, 71, 255, 0.35);
+    border-radius: 6px;
+    color: var(--rh-accent-text);
+    font: inherit;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .reyohoho-vaft-test-btn:hover {
-    background: rgba(145, 71, 255, 0.25);
-    border-color: rgba(145, 71, 255, 0.5);
-    color: #d4b8ff;
+    border-color: rgba(145, 71, 255, 0.6);
 }
 
 .reyohoho-vaft-test-btn:disabled {
-    background: rgba(255, 165, 0, 0.15);
-    border-color: rgba(255, 165, 0, 0.3);
-    color: #ffc107;
+    color: var(--rh-warn);
+    border-color: rgba(255, 179, 26, 0.35);
+    background: rgba(255, 179, 26, 0.1);
     cursor: not-allowed;
 }
 
-/* ============================================
-   Links Styles
-   ============================================ */
+/* ---------- Footer links ---------- */
 
 .reyohoho-links {
     display: flex;
     gap: 4px;
-    margin-top: 6px;
+    padding: 6px;
+    border-top: 1px solid var(--rh-border);
 }
 
 .reyohoho-tg-link,
@@ -970,57 +1103,50 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     flex: 1;
-    padding: 5px 6px;
-    background: transparent;
-    border: none;
-    border-radius: 3px;
-    color: rgba(255, 255, 255, 0.4);
+    padding: 7px 8px;
+    border-radius: 6px;
+    color: var(--rh-text-2);
+    font-size: 12px;
+    font-weight: 500;
     text-decoration: none;
-    font-size: 9px;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.reyohoho-tg-link:hover,
+.reyohoho-donate-link:hover {
+    background: var(--rh-hover);
 }
 
 .reyohoho-tg-link:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #29b6f6;
+    color: #4fc3f7;
 }
 
 .reyohoho-donate-link:hover {
-    background: rgba(145, 71, 255, 0.1);
-    color: #bf94ff;
+    color: var(--rh-accent-text);
 }
 
-.reyohoho-tg-icon {
-    width: 11px;
-    height: 11px;
-    opacity: 0.6;
-    transition: all 0.15s ease;
+.reyohoho-tg-link:focus-visible,
+.reyohoho-donate-link:focus-visible {
+    outline: 2px solid var(--rh-accent);
+    outline-offset: -2px;
 }
 
-.reyohoho-tg-link:hover .reyohoho-tg-icon {
-    opacity: 1;
-    color: #29b6f6;
+.reyohoho-tg-icon,
+.reyohoho-heart-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
 }
 
-/* ============================================
-   Ad Block Banner Styles
-   ============================================ */
-
-.adblock-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1000;
-}
-
-.player-adblock-notice {
-    color: white;
-    background-color: rgba(0, 0, 0, 0.8);
-    padding: 5px 10px;
-    font-size: 12px;
-    border-radius: 0 0 4px 0;
+@media (prefers-reduced-motion: reduce) {
+    .reyohoho-proxy-settings *,
+    .reyohoho-proxy-settings *::before,
+    .reyohoho-proxy-settings *::after {
+        transition: none !important;
+        animation: none !important;
+    }
 }
 `;
     if (document.head) {
@@ -1048,10 +1174,10 @@ const PROXY_SERVERS = [
 // live playlists only and never the user's token; VODs stay on ReYohoho.
 const LUMINOUS_QUERY = 'allow_source=true&allow_audio_only=true&allow_spectre=false&fast_bread=true&type=any&player=twitchweb';
 const PROXY_PROVIDERS = [
-    { id: 'auto', label: 'Авто (ReYohoho)' },
+    { id: 'auto', label: 'Авто' },
     ...PROXY_SERVERS.map((base) => {
         const id = base.split('/')[2].split('.')[0];
-        return { id, label: 'ReYohoho ' + id, base };
+        return { id, label: id, base };
     }),
     { id: 'luminous-eu', label: 'Luminous EU', live: 'https://eu.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
     { id: 'luminous-eu2', label: 'Luminous EU2', live: 'https://eu2.luminous.dev/playlist/{channel}?' + LUMINOUS_QUERY },
@@ -1071,23 +1197,39 @@ function proxyServersFor(provider) {
     return provider && provider.base ? [provider.base, ...PROXY_SERVERS.filter((s) => s !== provider.base)] : PROXY_SERVERS;
 }
 
-// Health check as playback does it: a master playlist through the provider.
-// A bare ping lies (PerfProd sits behind Cloudflare, which answers even when
-// the origin is dead). Resolves { ok, ms, country } or { ok: false, code }.
-async function checkProxyProvider(provider) {
+// Best variant of a master playlist as Twitch names it ("1440p60", "1080p"), or null.
+function maxQualityOf(master) {
+    let best = null;
+    for (const m of master.matchAll(/#EXT-X-STREAM-INF:([^\n]*)/g)) {
+        const res = m[1].match(/RESOLUTION=\d+x(\d+)/);
+        if (!res) continue; // audio only
+        const h = parseInt(res[1], 10);
+        const fps = parseFloat((m[1].match(/FRAME-RATE=([\d.]+)/) || [])[1]) || 0;
+        if (!best || h > best.h || (h === best.h && fps > best.fps)) best = { h, fps };
+    }
+    return best ? best.h + 'p' + (best.fps >= 50 ? Math.round(best.fps) : '') : null;
+}
+
+// Health check as playback does it: the channel's master playlist through the
+// provider. A bare ping lies (PerfProd sits behind Cloudflare, which answers
+// even when the origin is dead). The user's token goes to ReYohoho servers
+// only (in a header, out of URLs and logs), as playback sends it there.
+// Resolves { ok, ms, country, quality } or { ok: false, code }.
+async function checkProxyProvider(provider, channel = PROVIDER_CHECK_CHANNEL, authToken = '') {
     const url = provider.live
-        ? provider.live.replace('{channel}', PROVIDER_CHECK_CHANNEL)
-        : provider.base + 'https://usher.ttvnw.net/api/channel/hls/' + PROVIDER_CHECK_CHANNEL + '.m3u8?allow_source=true&allow_audio_only=true&fast_bread=true';
+        ? provider.live.replace('{channel}', channel)
+        : provider.base + 'https://usher.ttvnw.net/api/channel/hls/' + channel + '.m3u8?allow_source=true&allow_audio_only=true&fast_bread=true';
+    const headers = authToken && provider.base ? { 'X-Auth-Token': authToken } : {};
     const started = Date.now();
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), PROVIDER_CHECK_TIMEOUT);
     try {
-        const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+        const res = await fetch(url, { cache: 'no-store', headers, signal: ctrl.signal });
         const text = res.ok ? await res.text() : '';
         if (!text.startsWith('#EXTM3U')) return { ok: false, code: res.status };
         // v2 master: "USER-COUNTRY",VALUE="NL"; v1: USER-COUNTRY="NL"
         const m = text.match(/USER-COUNTRY(?:",VALUE=|=)"([A-Z]{2})"/);
-        return { ok: true, ms: Date.now() - started, country: m ? m[1] : null };
+        return { ok: true, ms: Date.now() - started, country: m ? m[1] : null, quality: maxQualityOf(text) };
     } catch (e) {
         return { ok: false, code: 0 };
     } finally {
@@ -1281,15 +1423,16 @@ const IRC_PROXY_CHECK_TIMEOUT = 3000;
 
 // @include constants.js
 
+// Status pill text; its colored dot comes from CSS (data-status).
 function getStatusText(status) {
     switch (status) {
-        case 'active': return '● Активен';
-        case 'ready': return '○ Готов';
-        case 'checking': return '◌ Проверка...';
-        case 'disabled': return '○ Выключен';
-        case 'unavailable': return '✕ Недоступен';
-        case 'error': return '✕ Ошибка';
-        default: return '○ Ожидание';
+        case 'active': return 'Активен';
+        case 'ready': return 'Готов';
+        case 'checking': return 'Проверка';
+        case 'disabled': return 'Выключен';
+        case 'unavailable': return 'Недоступен';
+        case 'error': return 'Ошибка';
+        default: return 'Ожидание';
     }
 }
 
@@ -1303,46 +1446,67 @@ function getIrcProxyDisplay(extensionEnabled, ircProxy) {
     let badgeText;
     if (!extensionEnabled) {
         badgeStatus = 'disabled';
-        badgeText = '○ Выключен';
+        badgeText = 'Выключен';
     } else if (!enabled) {
         badgeStatus = 'disabled';
-        badgeText = '○ Выключен';
+        badgeText = 'Выключен';
     } else if (!available) {
         badgeStatus = 'unavailable';
-        badgeText = '✕ Недоступен (direct)';
+        badgeText = 'Напрямую';
     } else {
         badgeStatus = 'active';
-        badgeText = '● Активен';
+        badgeText = 'Активен';
     }
 
     return { enabled, available, badgeStatus, badgeText };
 }
 
-// One provider health check as text: absent / running / ok / failed.
-function providerCheckText(check) {
-    if (!check) return 'не проверен';
-    if (check.checking) return 'проверка…';
-    if (check.ok) return '✓ выход ' + (check.country || '??') + ' · ' + check.ms + ' мс';
-    return '✕ ' + (check.code ? 'HTTP ' + check.code : 'нет ответа');
+// One provider health check for the picker: { status: idle|checking|ok|bad, text }.
+// Quality is shown only when it was measured on the stream being watched.
+function providerCheckView(check, channel) {
+    if (!check) return { status: 'idle', text: '' };
+    if (check.checking) return { status: 'checking', text: 'Проверка…' };
+    if (!check.ok) return { status: 'bad', text: check.code ? 'Недоступен · ' + check.code : 'Нет ответа' };
+    const parts = [check.country || '—'];
+    if (check.quality && check.channel === channel) parts.push(check.quality);
+    parts.push(check.ms + ' мс');
+    return { status: 'ok', text: parts.join(' · ') };
 }
 
-// Option labels and the line under the picker. `state` = { id, checks, currentId }
-// from callbacks.getProviderState(); currentId is the ReYohoho server in use.
+// Server picker: summary row and list. `state` = callbacks.getProviderState():
+// { id, checks, currentId (ReYohoho server in use), channel }.
 function renderProviderSection(panel, state) {
-    const select = panel.querySelector('#reyohoho-provider-select');
-    const desc = panel.querySelector('.reyohoho-provider-desc');
-    if (!select || !desc || !state) return;
-    for (const option of select.options) {
-        const check = state.checks[option.value];
-        option.textContent = getProxyProvider(option.value).label + (check ? ' — ' + providerCheckText(check) : '');
-    }
-    select.value = state.id;
+    const root = panel.querySelector('.reyohoho-server');
+    if (!root || !state) return;
     const selected = getProxyProvider(state.id);
     const shown = selected.id === 'auto' ? PROXY_PROVIDERS.find((p) => p.id === state.currentId) : selected;
-    const kind = selected.live
-        ? 'Только трансляции, без вашего аккаунта (до 1080p), записи — через ReYohoho.'
-        : selected.id === 'auto' ? 'Первый доступный сервер ReYohoho.' : 'Этот сервер первым, остальные — запасные.';
-    desc.textContent = kind + (shown ? ' ' + shown.label + ': ' + providerCheckText(state.checks[shown.id]) : '');
+    const view = shown ? providerCheckView(state.checks[shown.id], state.channel) : { status: 'idle', text: '' };
+    root.querySelector('.reyohoho-server-name').textContent = selected.id === 'auto' && shown ? 'Авто · ' + shown.label : selected.label;
+    const meta = root.querySelector('.reyohoho-server-toggle .reyohoho-meta');
+    meta.textContent = view.text;
+    meta.dataset.status = view.status;
+    root.querySelectorAll('.reyohoho-server-option').forEach((option) => {
+        const id = option.dataset.id;
+        const v = id === 'auto'
+            ? { status: 'idle', text: shown && selected.id === 'auto' ? 'Сейчас ' + shown.label : 'Первый доступный' }
+            : providerCheckView(state.checks[id], state.channel);
+        const optionMeta = option.querySelector('.reyohoho-meta');
+        optionMeta.textContent = v.text;
+        optionMeta.dataset.status = v.status;
+        option.setAttribute('aria-checked', String(id === selected.id));
+        option.tabIndex = id === selected.id ? 0 : -1;
+    });
+}
+
+function serverOptionsHtml(providers) {
+    return providers.map((p) => `
+        <button type="button" role="radio" class="reyohoho-server-option" data-id="${p.id}" aria-checked="false" tabindex="-1">
+          <span class="reyohoho-radio" aria-hidden="true"></span>
+          <span class="reyohoho-server-option-text">
+            <span class="reyohoho-server-option-name">${p.label}</span>
+            <span class="reyohoho-meta" data-status="idle"></span>
+          </span>
+        </button>`).join('');
 }
 
 function updateProviderInPanels(state) {
@@ -1370,80 +1534,92 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
     panel.className = 'reyohoho-proxy-settings';
     panel.innerHTML = `
     <div class="reyohoho-header">
-      <span class="reyohoho-icon">🎬</span>
-      <span class="reyohoho-title">ReYohoho Proxy <span class="reyohoho-version">v${VERSION}</span></span>
+      <svg class="reyohoho-logo" viewBox="0 0 20 20" aria-hidden="true"><rect width="20" height="20" rx="6" fill="#9147ff"/><path d="M8 6.3v7.4c0 .4.44.64.77.42l5.6-3.7a.5.5 0 0 0 0-.84l-5.6-3.7A.5.5 0 0 0 8 6.3z" fill="#fff"/></svg>
+      <span class="reyohoho-title">ReYohoho</span>
+      <span class="reyohoho-version">v${VERSION}</span>
       <span class="reyohoho-proxy-status" data-status="${proxyStatus.status}">${getStatusText(proxyStatus.status)}</span>
     </div>
     <a href="${getSponsorUrl()}" target="_blank" rel="noopener noreferrer" class="reyohoho-sponsor" style="display: ${sponsorDisplay}">
       <span class="reyohoho-sponsor-label">Спонсор</span>
       <span class="reyohoho-sponsor-body">
-        <img class="reyohoho-sponsor-icon" src="${getSponsorIcon()}" alt="${SPONSOR_NAME}">
+        <img class="reyohoho-sponsor-icon" src="${getSponsorIcon()}" alt="">
         <span class="reyohoho-sponsor-text">
           <span class="reyohoho-sponsor-name">${SPONSOR_NAME}</span>
           <span class="reyohoho-sponsor-desc">${SPONSOR_DESC}</span>
         </span>
-        <span class="reyohoho-sponsor-arrow">↗</span>
+        <svg class="reyohoho-sponsor-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5h6v6M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
     </a>
-    <div class="reyohoho-section">
-      <div class="reyohoho-section-header">
-        <span class="reyohoho-section-title">Прокси</span>
+    <div class="reyohoho-group">
+      <div class="reyohoho-row">
+        <span class="reyohoho-row-text">
+          <span class="reyohoho-row-title">Прокси</span>
+          <span class="reyohoho-row-desc">1080p/1440p и доступ к Twitch через ReYohoho</span>
+        </span>
         <label class="reyohoho-toggle">
-          <input type="checkbox" id="reyohoho-ext-toggle" ${extensionEnabled ? 'checked' : ''}>
+          <input type="checkbox" id="reyohoho-ext-toggle" aria-label="Прокси" ${extensionEnabled ? 'checked' : ''}>
           <span class="reyohoho-toggle-slider"></span>
         </label>
       </div>
-      <span class="reyohoho-section-desc">Перенаправление запросов через прокси-сервер</span>
-    </div>
-    <div class="reyohoho-section">
-      <div class="reyohoho-section-header">
-        <label class="reyohoho-section-title" for="reyohoho-provider-select">Сервер плейлистов</label>
+      <div class="reyohoho-row reyohoho-server">
+        <button type="button" class="reyohoho-server-toggle" aria-expanded="false" aria-controls="reyohoho-server-list">
+          <span class="reyohoho-row-text">
+            <span class="reyohoho-row-title">Сервер</span>
+            <span class="reyohoho-server-summary">
+              <span class="reyohoho-server-name"></span>
+              <span class="reyohoho-meta" data-status="idle"></span>
+            </span>
+          </span>
+          <svg class="reyohoho-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="reyohoho-server-list" id="reyohoho-server-list" role="radiogroup" aria-label="Сервер плейлистов" hidden>
+          <span class="reyohoho-server-group">ReYohoho</span>
+          ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => !p.live))}
+          <span class="reyohoho-server-group">Сторонние</span>
+          ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => p.live))}
+          <span class="reyohoho-server-note">Сторонним уходит только имя канала, без вашего аккаунта. Записи всегда идут через ReYohoho.</span>
+        </div>
       </div>
-      <select class="reyohoho-provider-select" id="reyohoho-provider-select">
-        ${PROXY_PROVIDERS.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}
-      </select>
-      <span class="reyohoho-section-desc reyohoho-provider-desc"></span>
-    </div>
-    <div class="reyohoho-section">
-      <div class="reyohoho-section-header">
-        <span class="reyohoho-section-title">Скрыть Audio Only</span>
+      <div class="reyohoho-row">
+        <span class="reyohoho-row-text">
+          <span class="reyohoho-row-title">Скрыть Audio Only</span>
+          <span class="reyohoho-row-desc">Убрать «только звук» из списка качества</span>
+        </span>
         <label class="reyohoho-toggle">
-          <input type="checkbox" id="reyohoho-audio-only-toggle" ${hideAudioOnlyEnabled ? 'checked' : ''}>
+          <input type="checkbox" id="reyohoho-audio-only-toggle" aria-label="Скрыть Audio Only" ${hideAudioOnlyEnabled ? 'checked' : ''}>
           <span class="reyohoho-toggle-slider"></span>
         </label>
       </div>
-      <span class="reyohoho-section-desc">Удалять audio_only вариант из плейлиста</span>
-    </div>
-    <div class="reyohoho-section">
-      <div class="reyohoho-section-header">
-        <span class="reyohoho-section-title">IRC чат прокси</span>
-        <span class="reyohoho-proxy-status reyohoho-irc-status" data-status="${irc.badgeStatus}">${irc.badgeText}</span>
+      <div class="reyohoho-row">
+        <span class="reyohoho-row-text">
+          <span class="reyohoho-row-title">Чат через прокси <span class="reyohoho-proxy-status reyohoho-irc-status" data-status="${irc.badgeStatus}">${irc.badgeText}</span></span>
+          <span class="reyohoho-row-desc">Если сервер недоступен, чат идёт напрямую</span>
+        </span>
         <label class="reyohoho-toggle">
-          <input type="checkbox" id="reyohoho-irc-toggle" ${irc.enabled ? 'checked' : ''}>
+          <input type="checkbox" id="reyohoho-irc-toggle" aria-label="Чат через прокси" ${irc.enabled ? 'checked' : ''}>
           <span class="reyohoho-toggle-slider"></span>
         </label>
       </div>
-      <span class="reyohoho-section-desc">Прокси для wss://irc-ws.chat.twitch.tv. Если хост недоступен — используется direct.</span>
-    </div>
-    <div class="reyohoho-section">
-      <div class="reyohoho-section-header">
-        <span class="reyohoho-section-title">VAFT Блокировщик рекламы</span>
+      <div class="reyohoho-row">
+        <span class="reyohoho-row-text">
+          <span class="reyohoho-row-title">Блокировка рекламы</span>
+          <span class="reyohoho-row-desc">VAFT подменяет рекламу чистым потоком</span>
+          
+        </span>
         <label class="reyohoho-toggle">
-          <input type="checkbox" id="reyohoho-vaft-toggle" ${vaftEnabled ? 'checked' : ''}>
+          <input type="checkbox" id="reyohoho-vaft-toggle" aria-label="Блокировка рекламы" ${vaftEnabled ? 'checked' : ''}>
           <span class="reyohoho-toggle-slider"></span>
         </label>
       </div>
-      <span class="reyohoho-section-desc">Локальная блокировка через подмену потоков</span>
-      
     </div>
     <div class="reyohoho-links">
-      <a href="https://t.me/reyohoho_twitch_ext" target="_blank" class="reyohoho-tg-link">
-        <svg class="reyohoho-tg-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+      <a href="https://t.me/reyohoho_twitch_ext" target="_blank" rel="noopener noreferrer" class="reyohoho-tg-link">
+        <svg class="reyohoho-tg-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
         <span>Новости</span>
       </a>
-      <a href="https://boosty.to/sentryward/donate" target="_blank" class="reyohoho-donate-link">
-        <span>💜</span>
-        <span>Помочь проекту</span>
+      <a href="https://boosty.to/sentryward/donate" target="_blank" rel="noopener noreferrer" class="reyohoho-donate-link">
+        <svg class="reyohoho-heart-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 14.2 6.9 13.2C3.1 9.8.6 7.5.6 4.7.6 2.4 2.4.6 4.7.6c1.3 0 2.5.6 3.3 1.5C8.8 1.2 10 .6 11.3.6c2.3 0 4.1 1.8 4.1 4.1 0 2.8-2.5 5.1-6.3 8.5L8 14.2z"/></svg>
+        <span>Поддержать</span>
       </a>
     </div>
   `;
@@ -1457,17 +1633,52 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
         });
     }
 
-    // Provider picker: checks run when the user opens it (not on every menu
-    // open, so 90k viewers don't keep probing third-party servers).
-    const providerSelect = panel.querySelector('#reyohoho-provider-select');
-    if (providerSelect) {
+    // Server picker: a disclosure with a radio list. The whole list is probed
+    // only when opened (not on every menu open, so 90k viewers don't keep
+    // hitting third-party servers); the server in use is probed on menu open.
+    const serverRoot = panel.querySelector('.reyohoho-server');
+    if (serverRoot) {
+        const toggleBtn = serverRoot.querySelector('.reyohoho-server-toggle');
+        const list = serverRoot.querySelector('.reyohoho-server-list');
+        const options = () => Array.from(list.querySelectorAll('.reyohoho-server-option'));
+        const setOpen = (open) => {
+            list.hidden = !open;
+            toggleBtn.setAttribute('aria-expanded', String(open));
+            if (open) {
+                if (callbacks.onProviderCheck) callbacks.onProviderCheck();
+                (list.querySelector('[aria-checked="true"]') || options()[0]).focus();
+            }
+        };
         renderProviderSection(panel, callbacks.getProviderState && callbacks.getProviderState());
-        providerSelect.addEventListener('focus', () => {
-            if (callbacks.onProviderCheck) callbacks.onProviderCheck();
+        toggleBtn.addEventListener('click', () => setOpen(list.hidden));
+        list.addEventListener('click', (e) => {
+            const option = e.target.closest('.reyohoho-server-option');
+            if (!option) return;
+            if (option.getAttribute('aria-checked') === 'true') {
+                setOpen(false);
+                toggleBtn.focus();
+            } else if (callbacks.onProviderChange) {
+                callbacks.onProviderChange(option.dataset.id);
+            }
         });
-        providerSelect.addEventListener('change', (e) => {
+        list.addEventListener('keydown', (e) => {
+            const all = options();
+            const i = all.indexOf(document.activeElement);
+            let next = null;
+            if (e.key === 'ArrowDown') next = all[(i + 1) % all.length];
+            else if (e.key === 'ArrowUp') next = all[(i - 1 + all.length) % all.length];
+            else if (e.key === 'Home') next = all[0];
+            else if (e.key === 'End') next = all[all.length - 1];
+            else if (e.key !== 'Escape') return;
+            // Keep the keys from Twitch's menu, which would move its own focus or close.
+            e.preventDefault();
             e.stopPropagation();
-            if (callbacks.onProviderChange) callbacks.onProviderChange(e.target.value);
+            if (next) {
+                next.focus();
+            } else {
+                setOpen(false);
+                toggleBtn.focus();
+            }
         });
     }
 
@@ -4478,15 +4689,17 @@ function createMediaSequencer() {
             if (adBlockDiv == null) {
                 adBlockDiv = document.createElement('div');
                 adBlockDiv.className = 'tas-adblock-overlay';
-                adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;"><p></p></div>';
+                adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 6px; border-radius: 12px; background: rgba(24, 24, 27, 0.88); border: 1px solid rgba(145, 71, 255, 0.55); color: #efeff1; font: 600 12px/1.3 Inter, Roobert, Arial, sans-serif; pointer-events: none;">'
+                    + '<span style="display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: #9147ff; flex-shrink: 0;"><svg viewBox="0 0 20 20" width="10" height="10" aria-hidden="true"><path d="M7 4.8v10.4c0 .5.56.8.98.53l7.9-5.2a.63.63 0 0 0 0-1.06l-7.9-5.2A.63.63 0 0 0 7 4.8z" fill="#fff"/></svg></span>'
+                    + '<p style="margin: 0;"></p></div>';
                 adBlockDiv.style.display = 'none';
                 adBlockDiv.P = adBlockDiv.querySelector('p');
                 playerRootDiv.appendChild(adBlockDiv);
             }
             if (adBlockDiv != null) {
                 isActivelyStrippingAds = data.isStrippingAdSegments;
-                adBlockDiv.P.textContent = 'ReYohoho: Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');// + (data.numStrippedAdSegments > 0 ? \` (\${data.numStrippedAdSegments})\` : '');
-                adBlockDiv.style.display = data.hasAds && playerBufferState.isLive ? 'block' : 'none';
+                adBlockDiv.P.textContent = 'ReYohoho · блокируем ' + (data.isMidroll ? 'мидролл' : 'рекламу') + (data.activeBackupPlayerType ? ' · резерв ' + data.activeBackupPlayerType : (data.isStrippingAdSegments ? ' · вырезаем' : ''));// + (data.numStrippedAdSegments > 0 ? \` (\${data.numStrippedAdSegments})\` : '');
+                adBlockDiv.style.display = data.hasAds && playerBufferState.isLive && playerRootDiv.clientWidth >= 480 ? 'block' : 'none';
             }
             if (data.hasAds) {
                 hideTwitchAdOverlays();
@@ -5548,20 +5761,45 @@ function createMediaSequencer() {
         }
     }
 
+    // Channel being watched (twitch.tv/<login>), or null on other pages.
+    const NON_CHANNEL_PATHS = new Set(['directory', 'videos', 'settings', 'search', 'inventory', 'drops', 'subscriptions',
+        'wallet', 'friends', 'downloads', 'turbo', 'p', 'jobs', 'store', 'prime', 'messages', 'following', 'u', 'login', 'signup']);
+    function currentChannel() {
+        const m = location.pathname.match(/^\/(?:popout\/|moderator\/)?([a-z0-9_]{2,25})(?:\/|$)/i);
+        return m && !NON_CHANNEL_PATHS.has(m[1].toLowerCase()) ? m[1].toLowerCase() : null;
+    }
+
+    function twitchAuthToken() {
+        const m = document.cookie.match(/(?:^|;\s*)auth-token=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
     function providerState() {
         const url = proxyStatus.proxyUrl || (isUserscript ? localStorage.getItem('reyohoho_proxy_url') : null);
         const current = PROXY_PROVIDERS.find((p) => p.base && p.base === url);
-        return { id: proxyProviderId, checks: providerChecks, currentId: current ? current.id : null };
+        return {
+            id: proxyProviderId,
+            checks: providerChecks,
+            currentId: current ? current.id : null,
+            channel: currentChannel() || PROVIDER_CHECK_CHANNEL
+        };
     }
 
-    // Probe providers, skipping fresh or running checks; repaints as each answers.
+    // Probe providers on the stream being watched (its max quality per server),
+    // skipping fresh or running checks; repaints as each answers.
     function checkProviders(list) {
+        const channel = currentChannel() || PROVIDER_CHECK_CHANNEL;
         list.filter((p) => p.id !== 'auto').forEach(async (p) => {
             const c = providerChecks[p.id];
-            if (c && (c.checking || Date.now() - c.at < PROVIDER_CHECK_TTL)) return;
+            if (c && (c.checking || (c.channel === channel && Date.now() - c.at < PROVIDER_CHECK_TTL))) return;
             providerChecks[p.id] = { checking: true };
             updateProviderInPanels(providerState());
-            providerChecks[p.id] = { ...(await checkProxyProvider(p)), at: Date.now() };
+            let result = await checkProxyProvider(p, channel, twitchAuthToken());
+            // Channel offline or refused through this server: the server itself may still be fine.
+            if (!result.ok && result.code >= 400 && result.code < 500 && channel !== PROVIDER_CHECK_CHANNEL) {
+                result = { ...(await checkProxyProvider(p)), quality: null };
+            }
+            providerChecks[p.id] = { ...result, channel, at: Date.now() };
             updateProviderInPanels(providerState());
         });
     }
