@@ -176,7 +176,7 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
           ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => !p.live))}
           <span class="reyohoho-server-group">Сторонние</span>
           ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => p.live))}
-          <span class="reyohoho-server-note">Сторонним уходит только имя канала, без вашего аккаунта. Записи всегда идут через ReYohoho.</span>
+          <span class="reyohoho-server-note">Сторонним уходит только имя канала, без вашего аккаунта. Записи сторонним не уходят.</span>
         </div>
       </div>
       <div class="reyohoho-row">

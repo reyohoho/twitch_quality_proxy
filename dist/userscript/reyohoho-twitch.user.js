@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ReYohoho Twitch Proxy + VAFT
 // @namespace    https://github.com/reyohoho
-// @version      2.7.2
+// @version      2.8.0
 // @description  Прокси для Twitch с поддержкой 1080p/1440p; опция «Скрыть Audio Only» в настройках плеера
 // @author       ReYohoho
 // @match        https://www.twitch.tv/*
@@ -1172,7 +1172,7 @@
 // ReYohoho Twitch Proxy - Constants
 // ============================================
 
-const VERSION = '2.7.2';
+const VERSION = '2.8.0';
 const PROXY_SERVERS = [
     "https://proxy4.rte.net.ru/",
     "https://proxy7.rte.net.ru/",
@@ -1685,7 +1685,7 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
           ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => !p.live))}
           <span class="reyohoho-server-group">Сторонние</span>
           ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => p.live))}
-          <span class="reyohoho-server-note">Сторонним уходит только имя канала, без вашего аккаунта. Записи всегда идут через ReYohoho.</span>
+          <span class="reyohoho-server-note">Сторонним уходит только имя канала, без вашего аккаунта. Записи сторонним не уходят.</span>
         </div>
       </div>
       <div class="reyohoho-row">
