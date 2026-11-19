@@ -12,6 +12,7 @@ function getStatusText(status) {
         case 'checking': return 'Проверка';
         case 'disabled': return 'Выключен';
         case 'unavailable': return 'Недоступен';
+        case 'direct': return 'Напрямую';
         case 'error': return 'Ошибка';
         default: return 'Ожидание';
     }
@@ -54,15 +55,31 @@ function providerCheckView(check, channel) {
     return { status: 'ok', text: parts.join(' · ') };
 }
 
+// Notice when the stream doesn't go where the user picked: the picked server
+// (or, on auto, every ReYohoho one) didn't answer, so name what serves it now.
+// '' = nothing to say. `status` = background proxy status, `current` = provider in use.
+function fallbackNotice(selected, current, status) {
+    let via;
+    if (status === 'direct') via = 'напрямую через Twitch';
+    else if (status === 'active' && current && current !== selected && (selected.id !== 'auto' || current.live)) via = 'через ' + current.label;
+    else return '';
+    const who = status === 'direct' ? 'Все прокси недоступны' : selected.id === 'auto' ? 'Серверы ReYohoho недоступны' : selected.label + ' недоступен';
+    return who + ' · поток идёт ' + via + (status === 'active' && current.live ? ' · Drops не засчитываются' : '');
+}
+
 // Server picker: summary row and list. `state` = callbacks.getProviderState():
-// { id, checks, currentId (ReYohoho server in use), channel }.
+// { id, checks, currentId (provider in use), status, channel }.
 function renderProviderSection(panel, state) {
     const root = panel.querySelector('.reyohoho-server');
     if (!root || !state) return;
     const selected = getProxyProvider(state.id);
-    const shown = selected.id === 'auto' ? PROXY_PROVIDERS.find((p) => p.id === state.currentId) : selected;
+    const current = PROXY_PROVIDERS.find((p) => p.id === state.currentId);
+    const shown = selected.id === 'auto' ? current : selected;
     const view = shown ? providerCheckView(state.checks[shown.id], state.channel) : { status: 'idle', text: '' };
     root.querySelector('.reyohoho-server-name').textContent = selected.id === 'auto' && shown ? 'Авто · ' + shown.label : selected.label;
+    const notice = root.querySelector('.reyohoho-server-fallback');
+    const noticeText = fallbackNotice(selected, current, state.status);
+    if (notice && notice.textContent !== noticeText) notice.textContent = noticeText; // unchanged text isn't re-announced
     const meta = root.querySelector('.reyohoho-server-toggle .reyohoho-meta');
     meta.textContent = view.text;
     meta.dataset.status = view.status;
@@ -153,6 +170,7 @@ function createSettingsPanel(extensionEnabled, vaftEnabled, proxyStatus, callbac
           </span>
           <svg class="reyohoho-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
+        <span class="reyohoho-server-fallback" role="status"></span>
         <div class="reyohoho-server-list" id="reyohoho-server-list" role="radiogroup" aria-label="Сервер плейлистов" hidden>
           <span class="reyohoho-server-group">ReYohoho</span>
           ${serverOptionsHtml(PROXY_PROVIDERS.filter((p) => !p.live))}

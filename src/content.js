@@ -296,6 +296,7 @@
                 // The userscript header reads these before the shared constants exist.
                 localStorage.setItem('reyohoho_proxy_provider', JSON.stringify(provider));
                 if (provider.base) localStorage.setItem('reyohoho_proxy_url', provider.base);
+                localStorage.setItem('reyohoho_live_url', provider.live || '');
             }
             console.log(`[ReYohoho] Playlist server: ${provider.id}`);
             location.reload();
@@ -319,11 +320,13 @@
 
     function providerState() {
         const url = proxyStatus.proxyUrl || (isUserscript ? localStorage.getItem('reyohoho_proxy_url') : null);
-        const current = PROXY_PROVIDERS.find((p) => p.base && p.base === url);
+        // Live playlists go to the third-party one when the background picked it.
+        const current = PROXY_PROVIDERS.find((p) => p.id === proxyStatus.live) || PROXY_PROVIDERS.find((p) => p.base && p.base === url);
         return {
             id: proxyProviderId,
             checks: providerChecks,
             currentId: current ? current.id : null,
+            status: proxyStatus.status,
             channel: currentChannel() || PROVIDER_CHECK_CHANNEL
         };
     }
@@ -432,12 +435,14 @@
                 return;
             }
             
+            // Route the header's findBestProxy left: '' = none (Twitch directly), null = not checked yet.
             const proxyUrl = localStorage.getItem('reyohoho_proxy_url');
-            
-            if (proxyUrl) {
-                proxyStatus = { status: 'active' };
-            } else {
+            const liveUrl = localStorage.getItem('reyohoho_live_url');
+            const live = PROXY_PROVIDERS.find((p) => p.live && p.live === liveUrl);
+            if (proxyUrl === null) {
                 proxyStatus = { status: 'checking' };
+            } else {
+                proxyStatus = { status: proxyUrl || live ? 'active' : 'direct', live: live ? live.id : null };
             }
             return;
         }

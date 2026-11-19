@@ -20,6 +20,9 @@ const PROXY_SERVERS = [
 // reachable PROXY_SERVERS entry; a ReYohoho server = that one first, the rest
 // as fallback. Third-party ones (`live`: URL template, {channel} = login) get
 // live playlists only and never the user's token; VODs stay on ReYohoho.
+// No ReYohoho server usable (down or overloaded) -> live goes to the first
+// answering third-party one, a picked third-party one that's down -> ReYohoho
+// (findLiveProvider). Drops count through ReYohoho only.
 const LUMINOUS_QUERY = 'allow_source=true&allow_audio_only=true&allow_spectre=false&fast_bread=true&type=any&player=twitchweb';
 const PROXY_PROVIDERS = [
     { id: 'auto', label: 'Авто' },
@@ -319,6 +322,8 @@ let interceptCount = 0;
 let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
 let proxyProvider = getProxyProvider('auto');
+// Third-party provider serving live playlists now (findLiveProvider), or null.
+let liveProvider = null;
 
 let russiaOnlyChannelsSet = new Set();
 
@@ -386,23 +391,28 @@ async function loadExtensionState() {
 // ReYohoho Twitch Proxy - Proxy Checker
 // ============================================
 
+// A ReYohoho server is usable when /proxy/status answers and its playlist
+// builds aren't at the in-flight cap: past it the server answers playlists
+// with 503 at once, while plain relays (the old HEAD google.com check) still pass.
 async function checkSingleProxy(proxyUrl, timeout = PROXY_CHECK_TIMEOUT) {
     console.log(`[ReYohoho] Checking proxy: ${proxyUrl}`);
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
-        
-        const checkUrl = proxyUrl + "https://google.com";
-        const response = await fetch(checkUrl, {
-            method: "HEAD",
+
+        const response = await fetch(proxyUrl + "proxy/status", {
+            cache: "no-store",
             mode: "cors",
             signal: controller.signal
         });
-
+        const status = response.ok ? await response.json() : null;
         clearTimeout(timeoutId);
-        
-        const isAvailable = response.ok;
-        console.log(`[ReYohoho] Proxy ${proxyUrl} status: ${isAvailable ? "Available" : "Unavailable"} (${response.status})`);
+
+        const load = status && status.overload;
+        // 90%: a sample at the cap misses the 503s right after it, the cap is hit in bursts.
+        const overloaded = !!load && load.inflight >= load.maxInflight * 0.9;
+        const isAvailable = !!status && !overloaded;
+        console.log(`[ReYohoho] Proxy ${proxyUrl} status: ${isAvailable ? "Available" : "Unavailable"} (${response.status}${load ? `, inflight ${load.inflight}/${load.maxInflight}` : ""})`);
         return isAvailable;
     } catch (error) {
         console.error(`[ReYohoho] Proxy ${proxyUrl} check failed:`, error.name, error.message);
@@ -410,24 +420,44 @@ async function checkSingleProxy(proxyUrl, timeout = PROXY_CHECK_TIMEOUT) {
     }
 }
 
+// All checked at once (a hung server costs one timeout, not one each), the
+// first usable one in `servers` order wins.
 async function findAvailableProxy(servers = PROXY_SERVERS) {
     console.log("[ReYohoho] Starting search for available proxy...");
 
-    for (const proxyUrl of servers) {
-        const isAvailable = await checkSingleProxy(proxyUrl);
-        if (isAvailable) {
-            console.log(`[ReYohoho] Found available proxy: ${proxyUrl}`);
-            return proxyUrl;
+    const checks = servers.map((s) => checkSingleProxy(s));
+    for (let i = 0; i < servers.length; i++) {
+        if (await checks[i]) {
+            console.log(`[ReYohoho] Found available proxy: ${servers[i]}`);
+            return servers[i];
         }
     }
-    
+
     console.warn("[ReYohoho] No available proxy found");
+    return null;
+}
+
+// Third-party provider for live playlists: the picked one while it answers,
+// any of them (picked first) when no ReYohoho server is usable. null = the
+// ReYohoho server takes live too, or with none, Twitch directly.
+// Drops don't count through them: they build the master with their own token.
+async function findLiveProvider(picked, reyohohoBase) {
+    const order = PROXY_PROVIDERS
+        .filter((p) => p.live && (p === picked || !reyohohoBase))
+        .sort((a, b) => (b === picked) - (a === picked));
+    const checks = order.map((p) => checkProxyProvider(p));
+    for (let i = 0; i < order.length; i++) {
+        const r = await checks[i];
+        // 404 = up, only the probe channel is offline; 403/429/5xx/no answer = can't serve us
+        if (r.ok || r.code === 404) return order[i];
+        console.warn(`[ReYohoho] Live provider ${order[i].id} unavailable (${r.code})`);
+    }
     return null;
 }
 
 // Export for different environments
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { checkSingleProxy, findAvailableProxy };
+    module.exports = { checkSingleProxy, findAvailableProxy, findLiveProvider };
 }
 
 
@@ -443,12 +473,14 @@ function createProxyListener(authToken = "") {
 
         // Third-party provider: live playlists only, rebuilt from the channel
         // (no token or query of the user leaves for them).
-        const liveChannel = proxyProvider.live && extractTwitchChannelFromUsherUrl(originalUrl);
+        const liveChannel = liveProvider && extractTwitchChannelFromUsherUrl(originalUrl);
         if (liveChannel) {
-            return { redirectUrl: proxyProvider.live.replace('{channel}', liveChannel) };
+            return { redirectUrl: liveProvider.live.replace('{channel}', liveChannel) };
         }
 
-        const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
+        // No ReYohoho server usable: the rest (VODs) goes to Twitch directly.
+        if (!currentProxyUrl) return {};
+        const proxyUrl = currentProxyUrl;
         // Read the live toggle each time so a UI change applies on the
         // very next request without re-installing the listener.
         const hideAudioOnlyParam = hideAudioOnlyEnabled ? "&hide_audio_only=true" : "";
@@ -529,7 +561,7 @@ async function checkAndUpdateProxy() {
 
     const now = Date.now();
     if (now - lastCheckTime < CHECK_INTERVAL) {
-        if (currentProxyUrl) return;
+        if (currentProxyUrl || liveProvider) return;
     }
 
     proxyCheckInProgress = true;
@@ -539,9 +571,10 @@ async function checkAndUpdateProxy() {
     try {
         const availableProxy = await findAvailableProxy(proxyServersFor(proxyProvider));
         currentProxyUrl = availableProxy;
+        liveProvider = await findLiveProvider(proxyProvider, availableProxy);
 
-        if (availableProxy === null && !proxyProvider.live) {
-            proxyStatus = 'unavailable';
+        if (availableProxy === null && !liveProvider) {
+            proxyStatus = 'direct'; // no proxy answers: playlists go to Twitch as the page asked
             await updateProxyRules(false);
         } else {
             await updateProxyRules(true);
@@ -564,7 +597,8 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
             lastInterceptTime: lastInterceptTime,
             interceptCount: interceptCount,
             extensionEnabled: extensionEnabled,
-            provider: proxyProvider.id
+            provider: proxyProvider.id,
+            live: liveProvider && liveProvider.id
         });
     } else if (message.type === 'extensionToggle') {
         extensionEnabled = message.enabled;
@@ -602,13 +636,16 @@ async function applyProxyProvider(id) {
     await checkAndUpdateProxy();
 }
 
-// Navigation listener
+// Navigation listener; channel switches inside the SPA re-check too, so a
+// server that got overloaded meanwhile is dropped before the next stream.
 if (api.webNavigation) {
-    api.webNavigation.onBeforeNavigate.addListener(function(details) {
+    const onTwitchNavigation = function(details) {
         if (details.url.includes("twitch.tv")) {
             checkAndUpdateProxy();
         }
-    });
+    };
+    api.webNavigation.onBeforeNavigate.addListener(onTwitchNavigation);
+    api.webNavigation.onHistoryStateUpdated.addListener(onTwitchNavigation);
 }
 
 // Request listener for twitch URLs

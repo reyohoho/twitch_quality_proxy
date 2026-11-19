@@ -9,7 +9,7 @@
     "build:firefox": "node scripts/build.js firefox",
     "build:chromium": "node scripts/build.js chromium",
     "build:userscript": "node scripts/build.js userscript",
-    "test": "node scripts/vaft-selfcheck.js"
+    "test": "node scripts/vaft-selfcheck.js && node scripts/proxy-selfcheck.js"
   },
   "repository": {
     "type": "git",

@@ -105,7 +105,8 @@
     background: var(--rh-accent-soft);
 }
 
-.reyohoho-proxy-status[data-status="checking"] {
+.reyohoho-proxy-status[data-status="checking"],
+.reyohoho-proxy-status[data-status="direct"] {
     color: var(--rh-warn);
     background: rgba(255, 179, 26, 0.12);
 }
@@ -431,6 +432,19 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--rh-text);
+}
+
+/* "proxy5 недоступен · поток идёт через proxy4" under the server row */
+.reyohoho-server-fallback {
+    display: block;
+    margin: -4px 12px 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--rh-warn);
+}
+
+.reyohoho-server-fallback:empty {
+    display: none;
 }
 
 .reyohoho-server-note {

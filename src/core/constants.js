@@ -15,6 +15,9 @@ const PROXY_SERVERS = [
 // reachable PROXY_SERVERS entry; a ReYohoho server = that one first, the rest
 // as fallback. Third-party ones (`live`: URL template, {channel} = login) get
 // live playlists only and never the user's token; VODs stay on ReYohoho.
+// No ReYohoho server usable (down or overloaded) -> live goes to the first
+// answering third-party one, a picked third-party one that's down -> ReYohoho
+// (findLiveProvider). Drops count through ReYohoho only.
 const LUMINOUS_QUERY = 'allow_source=true&allow_audio_only=true&allow_spectre=false&fast_bread=true&type=any&player=twitchweb';
 const PROXY_PROVIDERS = [
     { id: 'auto', label: 'Авто' },

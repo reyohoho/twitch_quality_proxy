@@ -383,6 +383,10 @@ function buildUserscript() {
     // Add constants
     userscript += readConstants();
     userscript += '\n\n';
+
+    // Route checks shared with the backgrounds (the header's findBestProxy uses them)
+    userscript += readFile(path.join(SRC_DIR, 'core', 'proxy-checker.js'));
+    userscript += '\n\n';
     
     // Add UI Panel
     let uiPanelCode = readFile(path.join(SRC_DIR, 'core', 'ui-panel.js'));

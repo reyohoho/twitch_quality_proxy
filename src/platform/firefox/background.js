@@ -16,6 +16,8 @@ let interceptCount = 0;
 let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
 let proxyProvider = getProxyProvider('auto');
+// Third-party provider serving live playlists now (findLiveProvider), or null.
+let liveProvider = null;
 
 let russiaOnlyChannelsSet = new Set();
 
@@ -93,12 +95,14 @@ function createProxyListener(authToken = "") {
 
         // Third-party provider: live playlists only, rebuilt from the channel
         // (no token or query of the user leaves for them).
-        const liveChannel = proxyProvider.live && extractTwitchChannelFromUsherUrl(originalUrl);
+        const liveChannel = liveProvider && extractTwitchChannelFromUsherUrl(originalUrl);
         if (liveChannel) {
-            return { redirectUrl: proxyProvider.live.replace('{channel}', liveChannel) };
+            return { redirectUrl: liveProvider.live.replace('{channel}', liveChannel) };
         }
 
-        const proxyUrl = currentProxyUrl || PROXY_SERVERS[0];
+        // No ReYohoho server usable: the rest (VODs) goes to Twitch directly.
+        if (!currentProxyUrl) return {};
+        const proxyUrl = currentProxyUrl;
         // Read the live toggle each time so a UI change applies on the
         // very next request without re-installing the listener.
         const hideAudioOnlyParam = hideAudioOnlyEnabled ? "&hide_audio_only=true" : "";
@@ -179,7 +183,7 @@ async function checkAndUpdateProxy() {
 
     const now = Date.now();
     if (now - lastCheckTime < CHECK_INTERVAL) {
-        if (currentProxyUrl) return;
+        if (currentProxyUrl || liveProvider) return;
     }
 
     proxyCheckInProgress = true;
@@ -189,9 +193,10 @@ async function checkAndUpdateProxy() {
     try {
         const availableProxy = await findAvailableProxy(proxyServersFor(proxyProvider));
         currentProxyUrl = availableProxy;
+        liveProvider = await findLiveProvider(proxyProvider, availableProxy);
 
-        if (availableProxy === null && !proxyProvider.live) {
-            proxyStatus = 'unavailable';
+        if (availableProxy === null && !liveProvider) {
+            proxyStatus = 'direct'; // no proxy answers: playlists go to Twitch as the page asked
             await updateProxyRules(false);
         } else {
             await updateProxyRules(true);
@@ -214,7 +219,8 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
             lastInterceptTime: lastInterceptTime,
             interceptCount: interceptCount,
             extensionEnabled: extensionEnabled,
-            provider: proxyProvider.id
+            provider: proxyProvider.id,
+            live: liveProvider && liveProvider.id
         });
     } else if (message.type === 'extensionToggle') {
         extensionEnabled = message.enabled;
@@ -252,13 +258,16 @@ async function applyProxyProvider(id) {
     await checkAndUpdateProxy();
 }
 
-// Navigation listener
+// Navigation listener; channel switches inside the SPA re-check too, so a
+// server that got overloaded meanwhile is dropped before the next stream.
 if (api.webNavigation) {
-    api.webNavigation.onBeforeNavigate.addListener(function(details) {
+    const onTwitchNavigation = function(details) {
         if (details.url.includes("twitch.tv")) {
             checkAndUpdateProxy();
         }
-    });
+    };
+    api.webNavigation.onBeforeNavigate.addListener(onTwitchNavigation);
+    api.webNavigation.onHistoryStateUpdated.addListener(onTwitchNavigation);
 }
 
 // Request listener for twitch URLs

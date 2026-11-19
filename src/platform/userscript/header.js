@@ -86,7 +86,6 @@
     setInterval(refreshRussiaOnlyFromBackend, RUSSIA_ONLY_FETCH_INTERVAL_MS);
 
     // Get saved settings from localStorage
-    const savedProxy = localStorage.getItem('reyohoho_proxy_url') || PROXY_SERVERS[0];
     const extensionEnabled = localStorage.getItem('reyohoho_enabled') !== 'false'; // Default true
     // Provider picked in the panel, stored whole by the UI (this header runs
     // before the shared constants are defined). `live` = third-party URL
@@ -95,6 +94,12 @@
         try { return JSON.parse(localStorage.getItem('reyohoho_proxy_provider') || 'null') || {}; } catch (e) { return {}; }
     })();
     const LIVE_TEMPLATE = typeof savedProvider.live === 'string' ? savedProvider.live : '';
+    // Route as the last findBestProxy left it: ReYohoho server ('' = none
+    // answered, Twitch directly) and third-party live template ('' = none).
+    // findBestProxy refreshes both right away, before Twitch usually creates
+    // the player Worker, which reads them at creation.
+    let proxyRoute = localStorage.getItem('reyohoho_proxy_url') ?? PROXY_SERVERS[0];
+    let liveRoute = localStorage.getItem('reyohoho_live_url') ?? LIVE_TEMPLATE;
 
     function liveChannelOf(url) {
         const m = typeof url === 'string' && url.match(/^https:\/\/usher\.ttvnw\.net\/api\/(?:v2\/)?channel\/hls\/([^\/.?&#]+)\.m3u8/i);
@@ -143,10 +148,11 @@
     }
 
     // Build full proxy URL
-    function buildProxyUrl(originalUrl, proxyUrl) {
-        const liveChannel = LIVE_TEMPLATE && liveChannelOf(originalUrl);
-        if (liveChannel) return LIVE_TEMPLATE.replace('{channel}', liveChannel);
-        let result = proxyUrl + originalUrl;
+    function buildProxyUrl(originalUrl) {
+        const liveChannel = liveRoute && liveChannelOf(originalUrl);
+        if (liveChannel) return liveRoute.replace('{channel}', liveChannel);
+        if (!proxyRoute) return originalUrl;
+        let result = proxyRoute + originalUrl;
         const authToken = getAuthToken();
         if (authToken) {
             result += (originalUrl.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(authToken);
@@ -185,11 +191,11 @@
 
             const proxyCode = `
                 (function() {
-                    const PROXY_URL = '${savedProxy}';
+                    const PROXY_URL = ${JSON.stringify(proxyRoute)};
                     const AUTH_TOKEN = '${authTokenNow}';
                     const HIDE_AUDIO_ONLY = ${hideAudioOnlyForWorker ? 'true' : 'false'};
                     const RUSSIA_ONLY = new Set(${russiaOnlyJsonLiteral});
-                    const LIVE_TEMPLATE = ${JSON.stringify(LIVE_TEMPLATE)};
+                    const LIVE_TEMPLATE = ${JSON.stringify(liveRoute)};
 
                     function isRussiaOnlyUsher(url) {
                         if (typeof url !== 'string') return false;
@@ -209,6 +215,7 @@
                                 try { self.postMessage({ type: 'reyohoho-intercept', time: Date.now() }); } catch(e) {}
                                 return LIVE_TEMPLATE.replace('{channel}', live[1].toLowerCase());
                             }
+                            if (!PROXY_URL) return url; // no proxy answered: Twitch directly
                             let newUrl = PROXY_URL + url;
                             // Add auth token if available
                             if (AUTH_TOKEN) {
@@ -308,7 +315,7 @@
             if (isRussiaOnlyUsherUrlLocal(url)) {
                 console.log('[ReYohoho] Russia-only channel, bypassing proxy (fetch):', url.substring(0, 60) + '...');
             } else {
-                args[0] = buildProxyUrl(url, savedProxy);
+                args[0] = buildProxyUrl(url);
                 console.log('[ReYohoho] Intercepting fetch:', url.substring(0, 60) + '...');
                 notifyIntercept();
             }
@@ -316,7 +323,7 @@
             if (isRussiaOnlyUsherUrlLocal(url.url)) {
                 console.log('[ReYohoho] Russia-only channel, bypassing proxy (Request):', url.url.substring(0, 60) + '...');
             } else {
-                const newUrl = buildProxyUrl(url.url, savedProxy);
+                const newUrl = buildProxyUrl(url.url);
                 args[0] = new Request(newUrl, url);
                 console.log('[ReYohoho] Intercepting Request:', url.url.substring(0, 60) + '...');
                 notifyIntercept();
@@ -331,7 +338,7 @@
             if (isRussiaOnlyUsherUrlLocal(url)) {
                 console.log('[ReYohoho] Russia-only channel, bypassing proxy (XHR):', url.substring(0, 60) + '...');
             } else {
-                url = buildProxyUrl(url, savedProxy);
+                url = buildProxyUrl(url);
                 console.log('[ReYohoho] Intercepting XHR:', url.substring(0, 60) + '...');
                 notifyIntercept();
             }
@@ -339,7 +346,7 @@
         return originalXHROpen.call(this, method, url, ...rest);
     };
 
-    console.log('[ReYohoho] Proxy userscript loaded (proxy: ' + savedProxy + ', enabled: ' + extensionEnabled + ', hideAudioOnly: ' + getHideAudioOnly() + ')');
+    console.log('[ReYohoho] Proxy userscript loaded (proxy: ' + (proxyRoute || 'direct') + ', live: ' + (liveRoute || '-') + ', enabled: ' + extensionEnabled + ', hideAudioOnly: ' + getHideAudioOnly() + ')');
 
     // ============================================
     // STORAGE ADAPTER (for UI compatibility)
@@ -363,28 +370,19 @@
     window.__REYOHOHO_USERSCRIPT__ = true;
     window.__REYOHOHO_STORAGE__ = storage;
 
-    // Check proxies in background and save best one
+    // Pick the route as the extension backgrounds do (proxy-checker.js):
+    // the picked ReYohoho server or the next usable one, a third-party one for
+    // live when the picked one answers or no ReYohoho server does, else Twitch.
     (async function findBestProxy() {
+        if (!extensionEnabled) return;
+        await null; // the shared helpers and constants below this header exist after this tick
         const order = savedProvider.base ? [savedProvider.base, ...PROXY_SERVERS.filter((s) => s !== savedProvider.base)] : PROXY_SERVERS;
-        for (const proxyUrl of order) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-                const response = await fetch(proxyUrl + 'https://google.com', {
-                    method: 'HEAD',
-                    mode: 'no-cors',
-                    signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
-                localStorage.setItem('reyohoho_proxy_url', proxyUrl);
-                console.log('[ReYohoho] Best proxy saved:', proxyUrl);
-                return;
-            } catch (e) {
-                // Try next proxy
-            }
-        }
-        localStorage.setItem('reyohoho_proxy_url', PROXY_SERVERS[0]);
+        const base = (await findAvailableProxy(order)) || '';
+        const live = await findLiveProvider(getProxyProvider(savedProvider.id), base);
+        proxyRoute = base;
+        liveRoute = live ? live.live : '';
+        localStorage.setItem('reyohoho_proxy_url', proxyRoute);
+        localStorage.setItem('reyohoho_live_url', liveRoute);
+        console.log('[ReYohoho] Route: proxy ' + (proxyRoute || 'direct') + ', live ' + (live ? live.id : '-'));
     })();
 })();

@@ -12,6 +12,8 @@ let rulesActive = false;
 let extensionEnabled = true;
 let hideAudioOnlyEnabled = false;
 let proxyProvider = getProxyProvider('auto');
+// Third-party provider serving live playlists now (findLiveProvider), or null.
+let liveProvider = null;
 
 let russiaOnlyChannelsSet = new Set();
 let lastRussiaOnlyRefreshAt = 0;
@@ -98,7 +100,7 @@ async function updateProxyRules(enable, proxyUrl) {
         const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
         const existingRuleIds = existingRules.map((rule) => rule.id);
 
-        if (enable && (proxyUrl || proxyProvider.live)) {
+        if (enable && (proxyUrl || liveProvider)) {
             let authParam = "";
 
             try {
@@ -140,13 +142,13 @@ async function updateProxyRules(enable, proxyUrl) {
             }
             // Third-party provider: live playlists only, rebuilt from the
             // channel (no token or query of the user leaves for them).
-            if (proxyProvider.live) {
+            if (liveProvider) {
                 rules.push({
                     id: 2,
                     priority: 2,
                     action: {
                         type: "redirect",
-                        redirect: { regexSubstitution: proxyProvider.live.replace('{channel}', '\\1') },
+                        redirect: { regexSubstitution: liveProvider.live.replace('{channel}', '\\1') },
                     },
                     condition: {
                         initiatorDomains: ["twitch.tv"],
@@ -177,7 +179,7 @@ async function updateProxyRules(enable, proxyUrl) {
                 addRules: rules,
             });
             rulesActive = true;
-            console.log(`[ReYohoho] Proxy rules enabled with ${proxyUrl} (provider=${proxyProvider.id}, hideAudioOnly=${hideAudioOnlyEnabled}, russiaOnlyAllowed=${russiaOnlyArr.length})`);
+            console.log(`[ReYohoho] Proxy rules enabled with ${proxyUrl} (provider=${proxyProvider.id}, live=${liveProvider && liveProvider.id}, hideAudioOnly=${hideAudioOnlyEnabled}, russiaOnlyAllowed=${russiaOnlyArr.length})`);
         } else {
             await chrome.declarativeNetRequest.updateDynamicRules({
                 removeRuleIds: existingRuleIds,
@@ -207,7 +209,7 @@ async function checkAndUpdateProxy() {
 
     const now = Date.now();
     if (now - lastCheckTime < CHECK_INTERVAL) {
-        if (currentProxyUrl) return;
+        if (currentProxyUrl || liveProvider) return;
     }
 
     proxyCheckInProgress = true;
@@ -216,14 +218,15 @@ async function checkAndUpdateProxy() {
 
     try {
         const availableProxy = await findAvailableProxy(proxyServersFor(proxyProvider));
+        liveProvider = await findLiveProvider(proxyProvider, availableProxy);
 
-        if (availableProxy || proxyProvider.live) {
+        if (availableProxy || liveProvider) {
             currentProxyUrl = availableProxy;
             await updateProxyRules(true, availableProxy);
             proxyStatus = 'active';
         } else {
             currentProxyUrl = null;
-            proxyStatus = 'unavailable';
+            proxyStatus = 'direct'; // no proxy answers: playlists go to Twitch as the page asked
             await updateProxyRules(false, null);
         }
     } catch (error) {
@@ -242,7 +245,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             status: extensionEnabled ? proxyStatus : 'disabled',
             rulesActive: rulesActive,
             extensionEnabled: extensionEnabled,
-            provider: proxyProvider.id
+            provider: proxyProvider.id,
+            live: liveProvider && liveProvider.id
         });
     } else if (message.type === 'extensionToggle') {
         extensionEnabled = message.enabled;
@@ -283,12 +287,15 @@ async function applyProxyProvider(id) {
     await checkAndUpdateProxy();
 }
 
-// Navigation listener
-chrome.webNavigation.onBeforeNavigate.addListener(function(details) {
+// Navigation listener; channel switches inside the SPA re-check too, so a
+// server that got overloaded meanwhile is dropped before the next stream.
+function onTwitchNavigation(details) {
     if (details.url.includes("twitch.tv")) {
         checkAndUpdateProxy();
     }
-});
+}
+chrome.webNavigation.onBeforeNavigate.addListener(onTwitchNavigation);
+chrome.webNavigation.onHistoryStateUpdated.addListener(onTwitchNavigation);
 
 async function bootstrap() {
     await loadExtensionState();
